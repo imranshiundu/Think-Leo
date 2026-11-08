@@ -1,0 +1,19 @@
+{
+  "name": "Think Leo — Brain Quests for Kids",
+  "short_name": "Think Leo",
+  "description": "Roar into brain quests with Leo the lion! Levels, streaks, combos and stars — a playful thinking game for curious kids. Best on a laptop.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FFF7E6",
+  "theme_color": "#FFB020",
+  "categories": ["education", "games", "kids"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ]
+}
