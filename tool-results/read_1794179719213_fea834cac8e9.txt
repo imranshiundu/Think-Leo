@@ -1,0 +1,910 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→/**
+     4→     4→ * Think Leo — Play screen: the adrenaline engine
+     5→     5→ * ──────────────────────────────────────────────
+     6→     6→ * Phase machine:
+     7→     7→ *   intro → play ⇄ reveal → (last round) rushIntro → rush → results
+     8→     8→ *                          └─ hearts hit 0 → out
+     9→     9→ * Juice: combo meter with escalating sounds, countdown ring, heartbeat
+    10→    10→ * vignette, screen shake, Leo reactions, and the ×2 LEO RUSH finale
+    11→    11→ * (Candy-Crush "Sugar Crush" moment). Math in docs/ALGORITHM.md §4–6.
+    12→    12→ */
+    13→    13→
+    14→    14→import { Leo } from "@/components/leo/Leo";
+    15→    15→import { ChunkyButton, ConfettiBurst, HeartPill, PawProgress, StarRow } from "@/components/game/bits";
+    16→    16→import {
+    17→    17→  BASE_POINTS,
+    18→    18→  RUSH_SECONDS,
+    19→    19→  ROUND_COUNT,
+    20→    20→  chestAfterLevel,
+    21→    21→  clamp,
+    22→    22→  questionPoints,
+    23→    23→  questionTime,
+    24→    24→  starsFor,
+    25→    25→  worldOf,
+    26→    26→  xpForRun,
+    27→    27→  type Mood,
+    28→    28→} from "@/lib/game";
+    29→    29→import { buildPlan, makeQuestion, makeRushQuestion, type Question } from "@/lib/questions";
+    30→    30→import { sfx } from "@/lib/sound";
+    31→    31→import { useLeo } from "@/lib/store";
+    32→    32→import { AnimatePresence, motion } from "framer-motion";
+    33→    33→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+    34→    34→
+    35→    35→type Phase = "intro" | "play" | "reveal" | "rushIntro" | "rush" | "out" | "results";
+    36→    36→
+    37→    37→interface Results {
+    38→    38→  stars: number;
+    39→    39→  xp: number;
+    40→    40→  accuracy: number;
+    41→    41→  total: number;
+    42→    42→  isBest: boolean;
+    43→    43→  chest: boolean;
+    44→    44→}
+    45→    45→
+    46→    46→const PRAISE = ["Roarrsome!", "Big brain move!", "Yes! Keep going!", "Pawsome!"];
+    47→    47→const UNSTOPPABLE = ["UNSTOPPABLE!", "MEGA COMBO!", "ON FIRE! 🔥", "LEO-LEVEL THINKING!"];
+    48→    48→const OOPS = ["Almost!", "So close!", "No worries —"];
+    49→    49→const NO_HEARTS = [
+    50→    50→  "Hearts refill over time — brains need naps too!",
+    51→    51→  "Out of hearts? Stretch, sip water, come back roaring!",
+    52→    52→];
+    53→    53→
+    54→    54→const PAD_COLORS = ["#58cc02", "#ff5a8c", "#9b5de5", "#ffb020"];
+    55→    55→
+    56→    56→export function Play({
+    57→    57→  levelIdx,
+    58→    58→  onExit,
+    59→    59→  onNext,
+    60→    60→  hasNext,
+    61→    61→}: {
+    62→    62→  levelIdx: number;
+    63→    63→  onExit: () => void;
+    64→    64→  onNext: () => void;
+    65→    65→  hasNext: boolean;
+    66→    66→}) {
+    67→    67→  const world = worldOf(levelIdx);
+    68→    68→  const plan = useMemo(() => buildPlan(levelIdx), [levelIdx]);
+    69→    69→  const attemptRef = useRef(1);
+    70→    70→
+    71→    71→  /* ── run state ── */
+    72→    72→  const [phase, setPhase] = useState<Phase>("intro");
+    73→    73→  const [qi, setQi] = useState(0);
+    74→    74→  const [boost, setBoost] = useState(0); // adaptive difficulty offset (-1..+2)
+    75→    75→  const [combo, setCombo] = useState(0);
+    76→    76→  const [maxCombo, setMaxCombo] = useState(0);
+    77→    77→  const [score, setScore] = useState(0);
+    78→    78→  const [correctCount, setCorrectCount] = useState(0);
+    79→    79→  const [answeredCount, setAnsweredCount] = useState(0);
+    80→    80→  const [rightStreak, setRightStreak] = useState(0);
+    81→    81→  const [wrongStreak, setWrongStreak] = useState(0);
+    82→    82→  const [picked, setPicked] = useState<number | null>(null);
+    83→    83→  const [revealOk, setRevealOk] = useState(false);
+    84→    84→  const [shakeKey, setShakeKey] = useState(0);
+    85→    85→  const [leoMood, setLeoMood] = useState<Mood>("idle");
+    86→    86→  const [bubble, setBubble] = useState<string | null>(null);
+    87→    87→  const [confettiKey, setConfettiKey] = useState(0);
+    88→    88→
+    89→    89→  /* rush state */
+    90→    90→  const [rushQs, setRushQs] = useState<Question[]>([]);
+    91→    91→  const [rushIdx, setRushIdx] = useState(0);
+    92→    92→  const [rushCombo, setRushCombo] = useState(0);
+    93→    93→  const [rushScore, setRushScore] = useState(0);
+    94→    94→  const [rushLeft, setRushLeft] = useState(RUSH_SECONDS);
+    95→    95→
+    96→    96→  const [results, setResults] = useState<Results | null>(null);
+    97→    97→  const recordedRef = useRef(false);
+    98→    98→
+    99→    99→  const diff = clamp(
+   100→   100→    Math.max(1, Math.min(6, 1 + Math.floor((levelIdx - 1) / 8) + boost)),
+   101→   101→    1,
+   102→   102→    6
+   103→   103→  );
+   104→   104→  const q = useMemo(
+   105→   105→    () =>
+   106→   106→      phase === "play" || phase === "reveal"
+   107→   107→        ? makeQuestion(plan[qi], diff, levelIdx, qi, attemptRef.current)
+   108→   108→        : null,
+   109→   109→    [phase, qi, diff, levelIdx, plan]
+   110→   110→  );
+   111→   111→
+   112→   112→  const resetRun = useCallback(
+   113→   113→    (fresh: boolean) => {
+   114→   114→      if (fresh) attemptRef.current += 1;
+   115→   115→      recordedRef.current = false;
+   116→   116→      setPhase("intro");
+   117→   117→      setQi(0);
+   118→   118→      setBoost(0);
+   119→   119→      setCombo(0);
+   120→   120→      setMaxCombo(0);
+   121→   121→      setScore(0);
+   122→   122→      setCorrectCount(0);
+   123→   123→      setAnsweredCount(0);
+   124→   124→      setRightStreak(0);
+   125→   125→      setWrongStreak(0);
+   126→   126→      setPicked(null);
+   127→   127→      setRushQs([]);
+   128→   128→      setRushIdx(0);
+   129→   129→      setRushCombo(0);
+   130→   130→      setRushScore(0);
+   131→   131→      setResults(null);
+   132→   132→      setLeoMood("idle");
+   133→   133→      setBubble(null);
+   134→   134→    },
+   135→   135→    []
+   136→   136→  );
+   137→   137→
+   138→   138→  /* keyboard answering (laptop love) */
+   139→   139→  const answerRef = useRef<(i: number) => void>(() => {});
+   140→   140→  useEffect(() => {
+   141→   141→    const h = (e: KeyboardEvent) => {
+   142→   142→      const n = Number(e.key);
+   143→   143→      if (phase === "play" && n >= 1 && n <= 4) answerRef.current(n - 1);
+   144→   144→    };
+   145→   145→    window.addEventListener("keydown", h);
+   146→   146→    return () => window.removeEventListener("keydown", h);
+   147→   147→  }, [phase]);
+   148→   148→
+   149→   149→  /* music per screen */
+   150→   150→  useEffect(() => {
+   151→   151→    sfx.startMusic("play");
+   152→   152→    return () => {
+   153→   153→      sfx.startMusic("home");
+   154→   154→    };
+   155→   155→  }, []);
+   156→   156→
+   157→   157→  /* ── answer handling ─────────────────────────────────────────── */
+   158→   158→
+   159→   159→  const advance = useCallback(
+   160→   160→    (ok: boolean) => {
+   161→   161→      const heartsNow = useLeo.getState().hearts;
+   162→   162→      if (!ok && heartsNow <= 0) {
+   163→   163→        setLeoMood("sad");
+   164→   164→        setBubble(NO_HEARTS[Math.floor(Math.random() * NO_HEARTS.length)]);
+   165→   165→        setPhase("out");
+   166→   166→        sfx.sadTrombone();
+   167→   167→        return;
+   168→   168→      }
+   169→   169→      if (qi >= ROUND_COUNT - 1) {
+   170→   170→        setLeoMood("excited");
+   171→   171→        setBubble("LEO RUSH! Everything ×2 — GO GO GO!");
+   172→   172→        setPhase("rushIntro");
+   173→   173→        sfx.whoosh();
+   174→   174→        window.setTimeout(() => {
+   175→   175→          setRushQs(Array.from({ length: 30 }, (_, i) => makeRushQuestion(diff, i, attemptRef.current)));
+   176→   176→          setRushIdx(0);
+   177→   177→          setRushLeft(RUSH_SECONDS);
+   178→   178→          setPhase("rush");
+   179→   179→        }, 1700);
+   180→   180→      } else {
+   181→   181→        setQi((n) => n + 1);
+   182→   182→        setPicked(null);
+   183→   183→        setLeoMood("idle");
+   184→   184→        setBubble(null);
+   185→   185→        setPhase("play");
+   186→   186→      }
+   187→   187→    },
+   188→   188→    [qi, diff]
+   189→   189→  );
+   190→   190→
+   191→   191→  const handleAnswer = useCallback(
+   192→   192→    (idx: number | null) => {
+   193→   193→      if (!q || phase !== "play") return;
+   194→   194→      const fracLeft = clamp(timeLeftRef.current / q.time, 0, 1);
+   195→   195→      const ok = idx !== null && idx === q.answer;
+   196→   196→      setPicked(idx);
+   197→   197→      setRevealOk(ok);
+   198→   198→      setAnsweredCount((a) => a + 1);
+   199→   199→      setPhase("reveal");
+   200→   200→
+   201→   201→      if (ok) {
+   202→   202→        const pts = questionPoints(combo + 1, fracLeft);
+   203→   203→        setScore((s) => s + pts);
+   204→   204→        setCorrectCount((c) => c + 1);
+   205→   205→        const nc = combo + 1;
+   206→   206→        setCombo(nc);
+   207→   207→        setMaxCombo((m) => Math.max(m, nc));
+   208→   208→        setRightStreak((r) => {
+   209→   209→          const nr = r + 1;
+   210→   210→          if (nr % 3 === 0) setBoost((b) => Math.min(2, b + 1)); // Flow Ranger: heat up
+   211→   211→          return nr;
+   212→   212→        });
+   213→   213→        setWrongStreak(0);
+   214→   214→        sfx.correct();
+   215→   215→        if (nc >= 3) window.setTimeout(() => sfx.combo(nc), 140);
+   216→   216→        setLeoMood(nc >= 5 ? "excited" : "happy");
+   217→   217→        setBubble(nc >= 5 ? UNSTOPPABLE[nc % UNSTOPPABLE.length] : PRAISE[nc % PRAISE.length]);
+   218→   218→      } else {
+   219→   219→        const s = useLeo.getState();
+   220→   220→        s.loseHeart();
+   221→   221→        setCombo(0);
+   222→   222→        setWrongStreak((w) => {
+   223→   223→          const nw = w + 1;
+   224→   224→          if (nw % 2 === 0) setBoost((b) => Math.max(-1, b - 1)); // Flow Ranger: cool down
+   225→   225→          return nw;
+   226→   226→        });
+   227→   227→        setRightStreak(0);
+   228→   228→        sfx.wrong();
+   229→   229→        window.setTimeout(() => sfx.heartLost(), 240);
+   230→   230→        setShakeKey((k) => k + 1);
+   231→   231→        setLeoMood("sad");
+   232→   232→        setBubble(idx === null ? "Time's up! Here's the trick:" : `${OOPS[Math.floor(Math.random() * OOPS.length)]} ${q.tip}`);
+   233→   233→      }
+   234→   234→
+   235→   235→      window.setTimeout(() => advance(ok), ok ? 900 : 1600);
+   236→   236→    },
+   237→   237→    [q, phase, combo, advance]
+   238→   238→  );
+   239→   239→
+   240→   240→  answerRef.current = (i: number) => {
+   241→   241→    if (!q || phase !== "play") return;
+   242→   242→    if (q.kind === "memory") return;
+   243→   243→    if (q.options.length && i < q.options.length) handleAnswer(i);
+   244→   244→  };
+   245→   245→
+   246→   246→  /* countdown ring */
+   247→   247→  const timeLeftRef = useRef(0);
+   248→   248→  const [timeLeft, setTimeLeft] = useState(10);
+   249→   249→  useEffect(() => {
+   250→   250→    if (phase !== "play" || !q) return;
+   251→   251→    const total = q.time;
+   252→   252→    setTimeLeft(total);
+   253→   253→    timeLeftRef.current = total;
+   254→   254→    const start = performance.now();
+   255→   255→    let lastTick = Math.ceil(total);
+   256→   256→    const id = window.setInterval(() => {
+   257→   257→      const left = total - (performance.now() - start) / 1000;
+   258→   258→      timeLeftRef.current = Math.max(0, left);
+   259→   259→      setTimeLeft(Math.max(0, left));
+   260→   260→      const whole = Math.ceil(left);
+   261→   261→      if (whole !== lastTick && whole <= 5 && whole > 0) sfx.tick();
+   262→   262→      lastTick = whole;
+   263→   263→      if (left <= 0) {
+   264→   264→        window.clearInterval(id);
+   265→   265→        handleAnswer(null);
+   266→   266→      }
+   267→   267→    }, 100);
+   268→   268→    return () => window.clearInterval(id);
+   269→   269→  }, [phase, qi]);
+   270→   270→
+   271→   271→  /* ── LEO RUSH ────────────────────────────────────────────────── */
+   272→   272→
+   273→   273→  const endRush = useCallback(() => {
+   274→   274→    const s = useLeo.getState();
+   275→   275→    const total = score + rushScore;
+   276→   276→    const accuracy = answeredCount > 0 ? correctCount / answeredCount : 0;
+   277→   277→    const stars = starsFor(accuracy);
+   278→   278→    const xp = stars > 0 ? xpForRun(total, stars) : 0;
+   279→   279→    const isBest = stars > 0 && total > (s.best[levelIdx] ?? 0);
+   280→   280→    if (!recordedRef.current) {
+   281→   281→      recordedRef.current = true;
+   282→   282→      if (stars > 0) {
+   283→   283→        s.recordLevel(levelIdx, stars, total);
+   284→   284→        s.addXp(xp);
+   285→   285→      }
+   286→   286→    }
+   287→   287→    const chest = stars > 0 && chestAfterLevel(levelIdx);
+   288→   288→    if (chest) s.grantChest(world.id);
+   289→   289→    setResults({ stars, xp, accuracy, total, isBest, chest });
+   290→   290→    setPhase("results");
+   291→   291→    if (stars > 0) {
+   292→   292→      sfx.fanfare();
+   293→   293→      setConfettiKey((k) => k + 1);
+   294→   294→      setLeoMood("celebrate");
+   295→   295→      setBubble(stars === 3 ? "PERFECT RUN! I'm roaring the roof off!" : "Level crushed! More stars next time?");
+   296→   296→      for (let i = 0; i < stars; i++) window.setTimeout(() => sfx.star(i), 600 + i * 380);
+   297→   297→    } else {
+   298→   298→      sfx.sadTrombone();
+   299→   299→      setLeoMood("sad");
+   300→   300→      setBubble("So close! One more try — I'll cheer for you!");
+   301→   301→    }
+   302→   302→  }, [score, rushScore, answeredCount, correctCount, levelIdx, world.id]);
+   303→   303→
+   304→   304→  useEffect(() => {
+   305→   305→    if (phase !== "rush") return;
+   306→   306→    const start = performance.now();
+   307→   307→    const id = window.setInterval(() => {
+   308→   308→      const left = RUSH_SECONDS - (performance.now() - start) / 1000;
+   309→   309→      setRushLeft(Math.max(0, left));
+   310→   310→      if (left <= 0) {
+   311→   311→        window.clearInterval(id);
+   312→   312→        endRush();
+   313→   313→      }
+   314→   314→    }, 100);
+   315→   315→    return () => window.clearInterval(id);
+   316→   316→  }, [phase, endRush]);
+   317→   317→
+   318→   318→  const rushAnswer = useCallback(
+   319→   319→    (idx: number) => {
+   320→   320→      const rq = rushQs[rushIdx];
+   321→   321→      if (!rq) return;
+   322→   322→      const ok = idx === rq.answer;
+   323→   323→      if (ok) {
+   324→   324→        setRushScore((s) => s + 120);
+   325→   325→        setRushCombo((c) => {
+   326→   326→          const nc = c + 1;
+   327→   327→          sfx.combo(nc + 2);
+   328→   328→          return nc;
+   329→   329→        });
+   330→   330→      } else {
+   331→   331→        setRushCombo(0);
+   332→   332→        sfx.tap();
+   333→   333→      }
+   334→   334→      if (rushIdx < rushQs.length - 1) setRushIdx((i) => i + 1);
+   335→   335→    },
+   336→   336→    [rushQs, rushIdx]
+   337→   337→  );
+   338→   338→
+   339→   339→  const hearts = useLeo((s) => s.hearts);
+   340→   340→  const refills = useLeo((s) => s.refills);
+   341→   341→  const doRefill = useLeo((s) => s.useRefill);
+   342→   342→
+   343→   343→  /* ── render ──────────────────────────────────────────────────── */
+   344→   344→
+   345→   345→  const qTimeTotal = q?.time ?? 10;
+   346→   346→  const danger = phase === "play" && timeLeft <= 3.5;
+   347→   347→  const hotCombo = combo >= 5 || (phase === "rush" && rushCombo >= 4);
+   348→   348→  const rushQ = phase === "rush" ? rushQs[rushIdx] : null;
+   349→   349→
+   350→   350→  return (
+   351→   351→    <div
+   352→   352→      className="relative h-screen w-full overflow-hidden"
+   353→   353→      style={{ background: `linear-gradient(180deg, ${world.wash[0]}, ${world.wash[1]})` }}
+   354→   354→    >
+   355→   355→      {/* heartbeat vignette */}
+   356→   356→      {danger && (
+   357→   357→        <div
+   358→   358→          className="pointer-events-none absolute inset-0 z-10"
+   359→   359→          style={{ boxShadow: "inset 0 0 90px rgba(255,60,90,0.45)" }}
+   360→   360→        />
+   361→   361→      )}
+   362→   362→      {hotCombo && <div className="combo-hot pointer-events-none absolute inset-0 z-10" />}
+   363→   363→
+   364→   364→      <ConfettiBurst fireKey={confettiKey} />
+   365→   365→
+   366→   366→      {/* HUD */}
+   367→   367→      <div className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 px-4 py-3">
+   368→   368→        <button
+   369→   369→          type="button"
+   370→   370→          onClick={onExit}
+   371→   371→          className="pill cursor-pointer px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
+   372→   372→        >
+   373→   373→          ✕ Map
+   374→   374→        </button>
+   375→   375→        <div className="pill px-3 py-1 font-display text-sm text-leo-ink">
+   376→   376→          {world.emoji} Lv {levelIdx}
+   377→   377→        </div>
+   378→   378→        <div className="ml-auto flex items-center gap-2">
+   379→   379→          <AnimatePresence mode="popLayout">
+   380→   380→            {combo >= 2 && (phase === "play" || phase === "reveal") && (
+   381→   381→              <motion.div
+   382→   382→                key={combo}
+   383→   383→                initial={{ scale: 0.4, rotate: -8, opacity: 0 }}
+   384→   384→                animate={{ scale: 1, rotate: 0, opacity: 1 }}
+   385→   385→                exit={{ scale: 0.6, opacity: 0 }}
+   386→   386→                className="pill px-3 py-1"
+   387→   387→                style={{ background: "#fff3c4", borderColor: "#ffb020" }}
+   388→   388→              >
+   389→   389→                <span className="font-display text-sm font-bold text-leo-sun-deep">×{combo} COMBO</span>
+   390→   390→              </motion.div>
+   391→   391→            )}
+   392→   392→          </AnimatePresence>
+   393→   393→          <div className="pill px-3 py-1 font-display text-sm font-bold text-leo-ink">{score + rushScore} pts</div>
+   394→   394→          <HeartPill compact />
+   395→   395→        </div>
+   396→   396→      </div>
+   397→   397→
+   398→   398→      {/* phases */}
+   399→   399→      <AnimatePresence mode="wait">
+   400→   400→        {phase === "intro" && (
+   401→   401→          <IntroCard
+   402→   402→            key="intro"
+   403→   403→            levelIdx={levelIdx}
+   404→   404→            plan={plan}
+   405→   405→            hearts={hearts}
+   406→   406→            refills={refills}
+   407→   407→            onStart={() => {
+   408→   408→              sfx.click();
+   409→   409→              setLeoMood("excited");
+   410→   410→              setBubble("8 puzzles. Beat the clock. ROAR!");
+   411→   411→              window.setTimeout(() => setBubble(null), 1600);
+   412→   412→              setPhase("play");
+   413→   413→            }}
+   414→   414→            onRefill={() => {
+   415→   415→              if (doRefill()) {
+   416→   416→                sfx.flame();
+   417→   417→                setBubble("Hearts full — LET'S GO!");
+   418→   418→              }
+   419→   419→            }}
+   420→   420→            onExit={onExit}
+   421→   421→          />
+   422→   422→        )}
+   423→   423→
+   424→   424→        {(phase === "play" || phase === "reveal") && q && (
+   425→   425→          <motion.section
+   426→   426→            key={`q-${qi}-${shakeKey}`}
+   427→   427→            initial={{ opacity: 0, y: 24 }}
+   428→   428→            animate={{ opacity: 1, y: 0 }}
+   429→   429→            exit={{ opacity: 0, y: -16 }}
+   430→   430→            className="absolute inset-0 z-[15] flex flex-col items-center justify-center px-6 pt-14"
+   431→   431→          >
+   432→   432→            {/* progress + timer */}
+   433→   433→            <div className="mb-3 flex w-full max-w-2xl items-center justify-between">
+   434→   434→              <PawProgress current={qi} total={ROUND_COUNT} />
+   435→   435→              <TimerRing left={timeLeft} total={qTimeTotal} />
+   436→   436→            </div>
+   437→   437→
+   438→   438→            {/* Leo + question card */}
+   439→   439→            <div className="flex w-full max-w-2xl items-end gap-3">
+   440→   440→              <div className="hidden shrink-0 md:block">
+   441→   441→                <Leo mood={leoMood} size={130} bubble={bubble} />
+   442→   442→              </div>
+   443→   443→              <div className={`leo-card w-full p-5 ${shakeKey % 2 === 1 && phase === "reveal" && !revealOk ? "anim-shake" : ""}`}>
+   444→   444→                <h2 className="text-center font-display text-xl font-bold text-leo-ink">{q.prompt}</h2>
+   445→   445→                <div className="mt-4">
+   446→   446→                  <QuestionStage q={q} reveal={phase === "reveal"} picked={picked} onAnswer={handleAnswer} />
+   447→   447→                </div>
+   448→   448→              </div>
+   449→   449→            </div>
+   450→   450→
+   451→   451→            {/* mobile Leo line */}
+   452→   452→            <p className="mt-3 font-display text-sm font-semibold text-leo-ink md:hidden">
+   453→   453→              {bubble ?? ""}
+   454→   454→            </p>
+   455→   455→          </motion.section>
+   456→   456→        )}
+   457→   457→
+   458→   458→        {phase === "rushIntro" && (
+   459→   459→          <motion.div
+   460→   460→            key="rushintro"
+   461→   461→            className="absolute inset-0 z-[25] flex flex-col items-center justify-center"
+   462→   462→            initial={{ opacity: 0 }}
+   463→   463→            animate={{ opacity: 1 }}
+   464→   464→            exit={{ opacity: 0 }}
+   465→   465→          >
+   466→   466→            <motion.div
+   467→   467→              initial={{ scale: 0.2, rotate: -14 }}
+   468→   468→              animate={{ scale: [0.2, 1.25, 1], rotate: [-14, 4, 0] }}
+   469→   469→              transition={{ duration: 0.7 }}
+   470→   470→              className="font-display text-7xl font-bold"
+   471→   471→            >
+   472→   472→              <span className="bg-gradient-to-r from-leo-sun via-leo-berry to-leo-grape bg-clip-text text-transparent">
+   473→   473→                LEO RUSH!
+   474→   474→              </span>
+   475→   475→            </motion.div>
+   476→   476→            <motion.div
+   477→   477→              initial={{ y: 20, opacity: 0 }}
+   478→   478→              animate={{ y: 0, opacity: 1 }}
+   479→   479→              transition={{ delay: 0.3 }}
+   480→   480→              className="mt-2 font-display text-xl text-leo-ink"
+   481→   481→            >
+   482→   482→              Everything ×2 · no hearts lost · GO!
+   483→   483→            </motion.div>
+   484→   484→            <div className="mt-4">
+   485→   485→              <Leo mood="excited" size={150} />
+   486→   486→            </div>
+   487→   487→          </motion.div>
+   488→   488→        )}
+   489→   489→
+   490→   490→        {phase === "rush" && rushQ && (
+   491→   491→          <motion.section
+   492→   492→            key={`rush-${rushIdx}`}
+   493→   493→            initial={{ opacity: 0, scale: 0.92 }}
+   494→   494→            animate={{ opacity: 1, scale: 1 }}
+   495→   495→            exit={{ opacity: 0, scale: 1.06 }}
+   496→   496→            transition={{ duration: 0.12 }}
+   497→   497→            className="absolute inset-0 z-[15] flex flex-col items-center justify-center px-6 pt-10"
+   498→   498→          >
+   499→   499→            <div className="mb-2 flex w-full max-w-xl items-center justify-between">
+   500→   500→              <span className="pill px-3 py-1 font-display text-sm font-bold text-leo-berry-deep">
+   501→   501→                ×2 RUSH
+   502→   502→              </span>
+   503→   503→              <span
+   504→   504→                className={`pill px-3 py-1 font-display text-lg font-bold ${
+   505→   505→                  rushLeft <= 4 ? "text-leo-berry-deep anim-heartbeat" : "text-leo-ink"
+   506→   506→                }`}
+   507→   507→              >
+   508→   508→                ⏱ {rushLeft.toFixed(1)}s
+   509→   509→              </span>
+   510→   510→              {rushCombo >= 2 && (
+   511→   511→                <span className="pill px-3 py-1 font-display text-sm font-bold text-leo-sun-deep">
+   512→   512→                  streak {rushCombo}
+   513→   513→                </span>
+   514→   514→              )}
+   515→   515→            </div>
+   516→   516→            <div className="leo-card w-full max-w-xl p-5">
+   517→   517→              <h2 className="text-center font-display text-xl font-bold text-leo-ink">{rushQ.prompt}</h2>
+   518→   518→              <div className="mt-4">
+   519→   519→                <QuestionStage q={rushQ} reveal={false} picked={null} onAnswer={rushAnswer} rushMode />
+   520→   520→              </div>
+   521→   521→            </div>
+   522→   522→            <div className="mt-3 flex items-center gap-3">
+   523→   523→              <Leo mood="excited" size={92} />
+   524→   524→              <div className="font-display text-3xl font-bold text-leo-ink">{rushScore}</div>
+   525→   525→            </div>
+   526→   526→          </motion.section>
+   527→   527→        )}
+   528→   528→
+   529→   529→        {phase === "out" && (
+   530→   530→          <motion.div
+   531→   531→            key="out"
+   532→   532→            initial={{ opacity: 0, y: 20 }}
+   533→   533→            animate={{ opacity: 1, y: 0 }}
+   534→   534→            className="absolute inset-0 z-[25] flex flex-col items-center justify-center px-6"
+   535→   535→          >
+   536→   536→            <Leo mood="sad" size={190} bubble={bubble} />
+   537→   537→            <div className="leo-card mt-6 max-w-md p-6 text-center">
+   538→   538→              <h2 className="font-display text-2xl font-bold text-leo-ink">Out of hearts!</h2>
+   539→   539→              <p className="mt-2 text-sm leading-relaxed text-leo-ink-soft">
+   540→   540→                Hearts refill every 15 minutes — or crack open a world chest for refill tickets.
+   541→   541→                Your progress in this level is safe to retry!
+   542→   542→              </p>
+   543→   543→              <div className="mt-4 flex flex-wrap justify-center gap-2">
+   544→   544→                <ChunkyButton color="sun" onClick={() => { doRefill(); sfx.flame(); setPhase("intro"); }}>
+   545→   545→                  🎟️ Use refill ({refills})
+   546→   546→                </ChunkyButton>
+   547→   547→                <ChunkyButton color="cocoa" onClick={onExit}>
+   548→   548→                  Back to map
+   549→   549→                </ChunkyButton>
+   550→   550→              </div>
+   551→   551→            </div>
+   552→   552→          </motion.div>
+   553→   553→        )}
+   554→   554→
+   555→   555→        {phase === "results" && results && (
+   556→   556→          <motion.div
+   557→   557→            key="results"
+   558→   558→            initial={{ opacity: 0 }}
+   559→   559→            animate={{ opacity: 1 }}
+   560→   560→            className="absolute inset-0 z-[25] flex flex-col items-center justify-center bg-black/25 px-6 backdrop-blur-[2px]"
+   561→   561→          >
+   562→   562→            <motion.div
+   563→   563→              initial={{ scale: 0.7, y: 40 }}
+   564→   564→              animate={{ scale: 1, y: 0 }}
+   565→   565→              transition={{ type: "spring", stiffness: 220, damping: 18 }}
+   566→   566→              className="leo-card w-full max-w-md p-7 text-center"
+   567→   567→            >
+   568→   568→              <div className="flex justify-center">
+   569→   569→                <Leo mood={leoMood} size={150} bubble={bubble} />
+   570→   570→              </div>
+   571→   571→              <h2 className="mt-2 font-display text-3xl font-bold text-leo-ink">
+   572→   572→                {results.stars > 0 ? "Level complete!" : "So close!"}
+   573→   573→              </h2>
+   574→   574→              <div className="mt-3 flex justify-center">
+   575→   575→                <StarRow n={results.stars} size={44} animate />
+   576→   576→              </div>
+   577→   577→              <div className="mt-4 grid grid-cols-3 gap-2">
+   578→   578→                <Stat label="Score" value={String(results.total)} />
+   579→   579→                <Stat label="Accuracy" value={`${Math.round(results.accuracy * 100)}%`} />
+   580→   580→                <Stat label="XP" value={`+${results.xp}`} />
+   581→   581→              </div>
+   582→   582→              {results.isBest && (
+   583→   583→                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.9 }} className="pill mx-auto mt-3 px-3 py-1 text-sm text-leo-sun-deep">
+   584→   584→                  🏅 New best score!
+   585→   585→                </motion.div>
+   586→   586→              )}
+   587→   587→              {results.chest && (
+   588→   588→                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 1.15 }} className="pill mx-auto mt-2 px-3 py-1 text-sm text-leo-ink">
+   589→   589→                  🎁 World chest: +2 refills, +40 XP
+   590→   590→                </motion.div>
+   591→   591→              )}
+   592→   592→              <div className="mt-5 flex flex-wrap justify-center gap-2">
+   593→   593→                {results.stars > 0 && hasNext && (
+   594→   594→                  <ChunkyButton color="leaf" size="lg" onClick={onNext}>
+   595→   595→                    Next level →
+   596→   596→                  </ChunkyButton>
+   597→   597→                )}
+   598→   598→                <ChunkyButton color="sun" onClick={() => resetRun(true)}>
+   599→   599→                  ↻ Replay
+   600→   600→                </ChunkyButton>
+   601→   601→                <ChunkyButton color="cocoa" onClick={onExit}>
+   602→   602→                  Map
+   603→   603→                </ChunkyButton>
+   604→   604→              </div>
+   605→   605→            </motion.div>
+   606→   606→          </motion.div>
+   607→   607→        )}
+   608→   608→      </AnimatePresence>
+   609→   609→    </div>
+   610→   610→  );
+   611→   611→}
+   612→   612→
+   613→   613→/* ── pieces ────────────────────────────────────────────────────── */
+   614→   614→
+   615→   615→function Stat({ label, value }: { label: string; value: string }) {
+   616→   616→  return (
+   617→   617→    <div className="rounded-xl border-[2.5px] border-leo-line bg-leo-cream px-2 py-2">
+   618→   618→      <div className="font-display text-lg font-bold leading-none text-leo-ink">{value}</div>
+   619→   619→      <div className="mt-0.5 text-[10px] uppercase tracking-wide text-leo-ink-soft">{label}</div>
+   620→   620→    </div>
+   621→   621→  );
+   622→   622→}
+   623→   623→
+   624→   624→function TimerRing({ left, total }: { left: number; total: number }) {
+   625→   625→  const r = 16;
+   626→   626→  const c = 2 * Math.PI * r;
+   627→   627→  const frac = clamp(left / total, 0, 1);
+   628→   628→  const low = left <= 5;
+   629→   629→  return (
+   630→   630→    <div className={`relative h-11 w-11 ${low ? "anim-heartbeat" : ""}`}>
+   631→   631→      <svg width="44" height="44" viewBox="0 0 44 44" className="-rotate-90">
+   632→   632→        <circle cx="22" cy="22" r={r} fill="#fff" stroke="#F0E0BD" strokeWidth="5" />
+   633→   633→        <circle
+   634→   634→          cx="22"
+   635→   635→          cy="22"
+   636→   636→          r={r}
+   637→   637→          fill="none"
+   638→   638→          stroke={low ? "#ff5a8c" : "#58cc02"}
+   639→   639→          strokeWidth="5"
+   640→   640→          strokeLinecap="round"
+   641→   641→          strokeDasharray={c}
+   642→   642→          strokeDashoffset={c * (1 - frac)}
+   643→   643→        />
+   644→   644→      </svg>
+   645→   645→      <span className={`absolute inset-0 flex items-center justify-center font-display text-sm font-bold ${low ? "text-leo-berry-deep" : "text-leo-ink"}`}>
+   646→   646→        {Math.ceil(left)}
+   647→   647→      </span>
+   648→   648→    </div>
+   649→   649→  );
+   650→   650→}
+   651→   651→
+   652→   652→function IntroCard({
+   653→   653→  levelIdx,
+   654→   654→  plan,
+   655→   655→  hearts,
+   656→   656→  refills,
+   657→   657→  onStart,
+   658→   658→  onRefill,
+   659→   659→  onExit,
+   660→   660→}: {
+   661→   661→  levelIdx: number;
+   662→   662→  plan: string[];
+   663→   663→  hearts: number;
+   664→   664→  refills: number;
+   665→   665→  onStart: () => void;
+   666→   666→  onRefill: () => void;
+   667→   667→  onExit: () => void;
+   668→   668→}) {
+   669→   669→  const world = worldOf(levelIdx);
+   670→   670→  return (
+   671→   671→    <motion.div
+   672→   672→      initial={{ opacity: 0, scale: 0.94 }}
+   673→   673→      animate={{ opacity: 1, scale: 1 }}
+   674→   674→      exit={{ opacity: 0, scale: 0.96 }}
+   675→   675→      className="absolute inset-0 z-[20] flex flex-col items-center justify-center px-6"
+   676→   676→    >
+   677→   677→      <Leo mood="excited" size={170} bubble="Ready to think fast?" />
+   678→   678→      <div className="leo-card mt-4 w-full max-w-md p-6 text-center">
+   679→   679→        <div className="font-display text-sm font-semibold uppercase tracking-widest text-leo-ink-soft">
+   680→   680→          {world.emoji} {world.name}
+   681→   681→        </div>
+   682→   682→        <h1 className="font-display text-4xl font-bold text-leo-ink">Level {levelIdx}</h1>
+   683→   683→        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+   684→   684→          {plan.map((k, i) => (
+   685→   685→            <span key={i} className="pill px-2 py-0.5 text-[11px] text-leo-ink-soft">
+   686→   686→              {KIND_LABEL[k] ?? k}
+   687→   687→            </span>
+   688→   688→          ))}
+   689→   689→        </div>
+   690→   690→        <p className="mt-3 text-sm leading-relaxed text-leo-ink-soft">
+   691→   691→          {ROUND_COUNT} puzzles · answer fast for combo multipliers · keep {hearts > 0 ? "your hearts" : "a heart"} to reach the{" "}
+   692→   692→          <b className="text-leo-ink">LEO RUSH</b> ×2 finale!
+   693→   693→        </p>
+   694→   694→        {hearts === 0 ? (
+   695→   695→          <div className="mt-4">
+   696→   696→            <p className="mb-2 font-display text-base font-bold text-leo-berry-deep">No hearts left!</p>
+   697→   697→            <div className="flex flex-wrap justify-center gap-2">
+   698→   698→              <ChunkyButton color="sun" onClick={onRefill} disabled={refills <= 0}>
+   699→   699→                🎟️ Use refill ({refills})
+   700→   700→              </ChunkyButton>
+   701→   701→              <ChunkyButton color="cocoa" onClick={onExit}>
+   702→   702→                Back to map
+   703→   703→              </ChunkyButton>
+   704→   704→            </div>
+   705→   705→          </div>
+   706→   706→        ) : (
+   707→   707→          <div className="mt-5">
+   708→   708→            <ChunkyButton color="leaf" size="xl" onClick={onStart}>
+   709→   709→              ▶ START
+   710→   710→            </ChunkyButton>
+   711→   711→          </div>
+   712→   712→        )}
+   713→   713→      </div>
+   714→   714→    </motion.div>
+   715→   715→  );
+   716→   716→}
+   717→   717→
+   718→   718→const KIND_LABEL: Record<string, string> = {
+   719→   719→  count: "🔢 Count",
+   720→   720→  addsub: "➕ Maths",
+   721→   721→  compare: "⚖️ Compare",
+   722→   722→  oddOne: "🔍 Odd one",
+   723→   723→  sequence: "🧩 Sequence",
+   724→   724→  multiply: "✖️ Tables",
+   725→   725→  truefalse: "🎯 True/trap",
+   726→   726→  memory: "🎵 Memory",
+   727→   727→};
+   728→   728→
+   729→   729→/* ── question stage ────────────────────────────────────────────── */
+   730→   730→
+   731→   731→function QuestionStage({
+   732→   732→  q,
+   733→   733→  reveal,
+   734→   734→  picked,
+   735→   735→  onAnswer,
+   736→   736→  rushMode = false,
+   737→   737→}: {
+   738→   738→  q: Question;
+   739→   739→  reveal: boolean;
+   740→   740→  picked: number | null;
+   741→   741→  onAnswer: (i: number | null) => void;
+   742→   742→  rushMode?: boolean;
+   743→   743→}) {
+   744→   744→  const bigDisplay = q.display ?? null;
+   745→   745→
+   746→   746→  return (
+   747→   747→    <div>
+   748→   748→      {bigDisplay && (
+   749→   749→        <div className="py-2 text-center font-display text-5xl font-bold tracking-wide text-leo-ink">
+   750→   750→          {bigDisplay}
+   751→   751→        </div>
+   752→   752→      )}
+   753→   753→
+   754→   754→      {q.kind === "count" && q.emojis && (
+   755→   755→        <div className="mx-auto flex max-w-md flex-wrap justify-center gap-1.5 py-2 text-4xl">
+   756→   756→          {q.emojis.map((e, i) => (
+   757→   757→            <motion.span key={i} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: i * 0.03 }}>
+   758→   758→              {e}
+   759→   759→            </motion.span>
+   760→   760→          ))}
+   761→   761→        </div>
+   762→   762→      )}
+   763→   763→
+   764→   764→      {q.kind === "sequence" && q.seq && (
+   765→   765→        <div className="flex flex-wrap justify-center gap-2 py-2">
+   766→   766→          {q.seq.map((s, i) => (
+   767→   767→            <span
+   768→   768→              key={i}
+   769→   769→              className={`flex h-14 min-w-14 items-center justify-center rounded-xl border-[3px] px-2 font-display text-2xl font-bold ${
+   770→   770→                s === "?" ? "border-leo-sun bg-leo-cream text-leo-sun-deep" : "border-leo-line bg-white text-leo-ink"
+   771→   771→              }`}
+   772→   772→            >
+   773→   773→              {s}
+   774→   774→            </span>
+   775→   775→          ))}
+   776→   776→        </div>
+   777→   777→      )}
+   778→   778→
+   779→   779→      {q.kind === "memory" && q.pads && (
+   780→   780→        <MemoryPads pads={q.pads} onResult={(ok) => onAnswer(ok ? q.answer : (q.answer + 1) % 4)} disabled={reveal} />
+   781→   781→      )}
+   782→   782→
+   783→   783→      {/* options */}
+   784→   784→      {q.kind !== "memory" && q.options.length > 0 && (
+   785→   785→        <div
+   786→   786→          className={`mt-3 grid gap-2.5 ${
+   787→   787→            q.options.length <= 2
+   788→   788→              ? "grid-cols-2"
+   789→   789→              : q.options.every((o) => o.length <= 3)
+   790→   790→                ? "grid-cols-4"
+   791→   791→                : "grid-cols-2"
+   792→   792→          }`}
+   793→   793→        >
+   794→   794→          {q.options.map((opt, i) => {
+   795→   795→            const isCorrect = reveal && i === q.answer;
+   796→   796→            const isWrongPick = reveal && picked === i && i !== q.answer;
+   797→   797→            const plate = q.groupOptions?.[i];
+   798→   798→            return (
+   799→   799→              <motion.button
+   800→   800→                key={i}
+   801→   801→                type="button"
+   802→   802→                disabled={reveal}
+   803→   803→                onClick={() => onAnswer(i)}
+   804→   804→                data-state={isCorrect ? "correct" : isWrongPick ? "wrong" : undefined}
+   805→   805→                whileHover={!reveal ? { y: -3 } : undefined}
+   806→   806→                whileTap={!reveal ? { scale: 0.96 } : undefined}
+   807→   807→                className={`answer-bubble flex min-h-[64px] cursor-pointer items-center justify-center px-3 py-3 ${
+   808→   808→                  q.kind === "oddOne" ? "text-4xl" : q.kind === "truefalse" ? "font-display text-2xl font-bold" : "font-display text-2xl font-bold text-leo-ink"
+   809→   809→                } ${q.kind === "truefalse" ? (i === 0 ? "bg-[#e9ffcf]" : "bg-[#ffe4ec]") : ""}`}
+   810→   810→              >
+   811→   811→                {plate ? (
+   812→   812→                  <span className="flex flex-col items-center gap-1">
+   813→   813→                    <span className="flex max-w-[180px] flex-wrap justify-center gap-0.5 text-xl">
+   814→   814→                      {plate.map((e, j) => (
+   815→   815→                        <span key={j}>{e}</span>
+   816→   816→                      ))}
+   817→   817→                    </span>
+   818→   818→                    <span className="font-display text-lg font-bold text-leo-ink">{opt}</span>
+   819→   819→                  </span>
+   820→   820→                ) : (
+   821→   821→                  opt
+   822→   822→                )}
+   823→   823→              </motion.button>
+   824→   824→            );
+   825→   825→          })}
+   826→   826→        </div>
+   827→   827→      )}
+   828→   828→
+   829→   829→      {rushMode && null}
+   830→   830→    </div>
+   831→   831→  );
+   832→   832→}
+   833→   833→
+   834→   834→/* ── memory mini-game (Simon-style) ────────────────────────────── */
+   835→   835→
+   836→   836→function MemoryPads({
+   837→   837→  pads,
+   838→   838→  onResult,
+   839→   839→  disabled,
+   840→   840→}: {
+   841→   841→  pads: number[];
+   842→   842→  onResult: (ok: boolean) => void;
+   843→   843→  disabled: boolean;
+   844→   844→}) {
+   845→   845→  const [showIdx, setShowIdx] = useState(-1); // which pad is lit during playback
+   846→   846→  const [watching, setWatching] = useState(true);
+   847→   847→  const [inputStep, setInputStep] = useState(0);
+   848→   848→  const [flash, setFlash] = useState<"ok" | "bad" | null>(null);
+   849→   849→  const done = useRef(false);
+   850→   850→
+   851→   851→  useEffect(() => {
+   852→   852→    if (!watching) return;
+   853→   853→    const timers: number[] = [];
+   854→   854→    pads.forEach((p, i) => {
+   855→   855→      timers.push(window.setTimeout(() => { setShowIdx(p); sfx.pad(p); }, 500 + i * 700));
+   856→   856→      timers.push(window.setTimeout(() => setShowIdx(-1), 500 + i * 700 + 430));
+   857→   857→    });
+   858→   858→    timers.push(window.setTimeout(() => setWatching(false), 500 + pads.length * 700 + 250));
+   859→   859→    return () => timers.forEach((t) => window.clearTimeout(t));
+   860→   860→  }, [pads, watching]);
+   861→   861→
+   862→   862→  const press = (i: number) => {
+   863→   863→    if (watching || disabled || done.current || flash) return;
+   864→   864→    sfx.pad(i);
+   865→   865→    if (pads[inputStep] === i) {
+   866→   866→      if (inputStep + 1 === pads.length) {
+   867→   867→        done.current = true;
+   868→   868→        setFlash("ok");
+   869→   869→        sfx.correct();
+   870→   870→        window.setTimeout(() => onResult(true), 550);
+   871→   871→      } else {
+   872→   872→        setInputStep((s) => s + 1);
+   873→   873→      }
+   874→   874→    } else {
+   875→   875→      done.current = true;
+   876→   876→      setFlash("bad");
+   877→   877→      sfx.wrong();
+   878→   878→      window.setTimeout(() => onResult(false), 650);
+   879→   879→    }
+   880→   880→  };
+   881→   881→
+   882→   882→  return (
+   883→   883→    <div className="flex flex-col items-center gap-3 py-1">
+   884→   884→      <span className={`font-display text-sm font-bold ${watching ? "text-leo-grape" : "text-leo-leaf-deep"}`}>
+   885→   885→        {watching ? "👀 WATCH…" : flash === "ok" ? "🎉 PERFECT!" : flash === "bad" ? "Oops…" : "🖐 YOUR TURN — repeat it!"}
+   886→   886→      </span>
+   887→   887→      <div className="grid grid-cols-2 gap-3">
+   888→   888→        {PAD_COLORS.map((color, i) => {
+   889→   889→          const lit = showIdx === i;
+   890→   890→          return (
+   891→   891→            <motion.button
+   892→   892→              key={i}
+   893→   893→              type="button"
+   894→   894→              aria-label={`Memory pad ${i + 1}`}
+   895→   895→              onClick={() => press(i)}
+   896→   896→              animate={{
+   897→   897→                scale: lit ? 1.09 : 1,
+   898→   898→                filter: lit ? "brightness(1.35)" : "brightness(1)",
+   899→   899→              }}
+   900→   900→              transition={{ duration: 0.12 }}
+   901→   901→              className="h-24 w-24 cursor-pointer rounded-2xl border-[3.5px] border-white/90 shadow-[0_6px_0_rgba(0,0,0,0.16)]"
+   902→   902→              style={{ background: color, opacity: flash === "bad" && pads[inputStep] !== i ? 0.9 : 1 }}
+   903→   903→            />
+   904→   904→          );
+   905→   905→        })}
+   906→   906→      </div>
+   907→   907→    </div>
+   908→   908→  );
+   909→   909→}
+   910→   910→

@@ -10,11 +10,14 @@
  */
 
 import { Leo } from "@/components/leo/Leo";
+import { ChestArt } from "@/components/leo/badges";
+import { Sticker } from "@/components/leo/stickers";
 import { HeartPill, SoundToggles, StreakFlame, StarRow } from "@/components/game/bits";
 import { LEVELS_PER_WORLD, WORLDS, isUnlocked, worldOf } from "@/lib/game";
 import { sfx } from "@/lib/sound";
 import { useLeo } from "@/lib/store";
 import { AnimatePresence, motion } from "framer-motion";
+import { Lock, Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const GAP = 96;
@@ -70,10 +73,10 @@ export function LevelMap({
 
   const clickNode = (i: number) => {
     if (isUnlocked(i, save.stars)) {
-      sfxClick();
+      sfx.click();
       onPlay(i);
     } else {
-      sfxDeny();
+      sfx.lockClick();
       setShake((s) => s + 1);
       setToast({ msg: `Earn a star on level ${i - 1} to unlock this one!`, key: Date.now() });
     }
@@ -82,12 +85,12 @@ export function LevelMap({
   const openChest = (w: number) => {
     const reached = (save.stars[(w + 1) * LEVELS_PER_WORLD] ?? 0) >= 1;
     if (!reached || save.chests[w]) {
-      sfxDeny();
+      sfx.lockClick();
       return;
     }
     save.grantChest(w);
-    sfx.fanfare();
-    setToast({ msg: "🎁 Chest opened: +2 heart refills & +40 XP!", key: Date.now() });
+    sfx.chestOpen();
+    setToast({ msg: "Chest opened: +2 heart refills and +40 XP!", key: Date.now() });
   };
 
   /* dotted trail through every node */
@@ -108,7 +111,10 @@ export function LevelMap({
         >
           ← Home
         </button>
-        <div className="pill px-3 py-1 text-sm text-leo-ink">⭐ {totalStars}</div>
+        <div className="pill gap-1.5 px-3 py-1 text-sm text-leo-ink">
+          <Star width={14} height={14} className="fill-leo-sun text-leo-sun-deep" />
+          {totalStars}
+        </div>
         <div className="ml-auto flex items-center gap-2">
           <HeartPill compact />
           <StreakFlame streak={save.streak} />
@@ -163,7 +169,7 @@ export function LevelMap({
                 className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-3 rounded-2xl border-[3px] border-white/80 px-4 py-2 shadow-[0_5px_0_rgba(0,0,0,0.08)]"
                 style={{ left: CANVAS_W / 2, top: y, background: `linear-gradient(120deg, ${w.wash[0]}, ${w.wash[1]})` }}
               >
-                <span className="text-2xl">{w.emoji}</span>
+                <Sticker id={w.emblem} size={30} title={`${w.name} world`} />
                 <div>
                   <div className="font-display text-sm font-bold text-leo-ink">{w.name}</div>
                   <div className="text-[10px] text-leo-ink-soft">
@@ -174,15 +180,15 @@ export function LevelMap({
                   type="button"
                   onClick={() => openChest(w)}
                   aria-label={claimed ? "Chest already opened" : reached ? "Open reward chest" : "Chest locked"}
-                  className={`ml-1 flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border-[3px] text-xl ${
+                  className={`ml-1 flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border-[3px] ${
                     claimed
-                      ? "border-leo-line bg-leo-sand opacity-60"
+                      ? "border-leo-line bg-leo-sand opacity-70"
                       : reached
                         ? "anim-pulse-ring border-leo-sun bg-white"
                         : "border-leo-line bg-leo-sand opacity-60"
                   }`}
                 >
-                  {claimed ? "✅" : reached ? "🎁" : "🔒"}
+                  <ChestArt state={claimed ? "open" : reached ? "ready" : "locked"} size={30} />
                 </button>
               </div>
             );
@@ -220,7 +226,7 @@ export function LevelMap({
                       : undefined
                   }
                 >
-                  {unlocked ? i : "🔒"}
+                  {unlocked ? i : <Lock width={20} height={20} />}
                   {stars > 0 && (
                     <div className="absolute -bottom-[26px] left-1/2 -translate-x-1/2">
                       <StarRow n={stars} size={13} />
@@ -249,11 +255,4 @@ export function LevelMap({
       </AnimatePresence>
     </div>
   );
-}
-
-function sfxClick() {
-  sfx.click();
-}
-function sfxDeny() {
-  sfx.wrong();
 }
