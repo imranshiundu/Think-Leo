@@ -3,17 +3,21 @@
 /**
  * Think Leo — Startup animation
  * ─────────────────────────────
- * Leo roars in from below, the wordmark pops letter by letter, a star
- * burst fires, then the curtain lifts. Tap anywhere to skip.
- * Only plays in full once per browser session (see ThinkLeo root).
+ * Leo roars in from below (with an actual synthesized roar), the wordmark
+ * pops letter by letter, a star burst fires, sticker confetti drifts,
+ * then the curtain lifts. Tap anywhere to skip. Only plays in full once
+ * per browser session (see ThinkLeo root).
  */
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { Leo } from "@/components/leo/Leo";
+import { StarPop } from "@/components/leo/badges";
+import { Sticker, type StickerId } from "@/components/leo/stickers";
 import { sfx } from "@/lib/sound";
 
 const WORD = "Think Leo!";
+const DRIFTERS: StickerId[] = ["star", "lollipop", "rocket", "fish", "butterfly", "candy"];
 
 export function Splash({ quick = false, onDone }: { quick?: boolean; onDone: () => void }) {
   const [leaving, setLeaving] = useState(false);
@@ -26,6 +30,7 @@ export function Splash({ quick = false, onDone }: { quick?: boolean; onDone: () 
     }
     sfx.unlock(); // polite try — may be blocked before first gesture, that's fine
     sfx.whoosh();
+    sfx.roar();
     const fan = window.setTimeout(() => sfx.fanfare(), 950);
     const out = window.setTimeout(() => setLeaving(true), 2500);
     const done = window.setTimeout(onDone, 3150);
@@ -46,18 +51,18 @@ export function Splash({ quick = false, onDone }: { quick?: boolean; onDone: () 
       role="button"
       aria-label="Think Leo is starting — tap to skip"
     >
-      {/* drifting background candy */}
-      {["🧠", "⭐", "🍭", "🔥", "🚀", "🌊"].map((e, i) => (
+      {/* drifting sticker confetti */}
+      {DRIFTERS.map((id, i) => (
         <span
-          key={i}
-          className="anim-drift pointer-events-none absolute select-none text-3xl opacity-60"
+          key={id}
+          className="anim-drift pointer-events-none absolute select-none opacity-60"
           style={{
             left: `${8 + i * 15}%`,
             top: `${12 + ((i * 23) % 70)}%`,
             animationDelay: `${i * 0.7}s`,
           }}
         >
-          {e}
+          <Sticker id={id} size={40} />
         </span>
       ))}
 
@@ -93,12 +98,12 @@ export function Splash({ quick = false, onDone }: { quick?: boolean; onDone: () 
             ))}
             {/* star burst at wordmark landing */}
             <motion.span
-              className="absolute -right-9 -top-4 text-3xl"
+              className="absolute -right-9 -top-4"
               initial={{ scale: 0, rotate: -120 }}
               animate={{ scale: [0, 1.4, 1], rotate: 0 }}
               transition={{ delay: 1.15, duration: 0.5 }}
             >
-              ⭐
+              <StarPop size={34} />
             </motion.span>
           </div>
 

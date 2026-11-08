@@ -10,9 +10,11 @@
 
 import { Home } from "@/components/game/Home";
 import { LevelMap } from "@/components/game/LevelMap";
+import { LevelUpOverlay } from "@/components/game/LevelUp";
 import { PhoneGate } from "@/components/game/PhoneGate";
 import { Play } from "@/components/game/Play";
 import { Splash } from "@/components/game/Splash";
+import { AchievementToasts } from "@/components/game/bits";
 import { PWARegister } from "@/components/PWARegister";
 import { detectDevice, watchDevice, type DeviceKind } from "@/lib/device";
 import { LEVELS_PER_WORLD, WORLDS } from "@/lib/game";
@@ -95,6 +97,8 @@ export default function ThinkLeo() {
   return (
     <>
       <PWARegister />
+      <AchievementToasts />
+      <LevelUpOverlay />
       <AnimatePresence>
         {!splashDone && (
           <Splash

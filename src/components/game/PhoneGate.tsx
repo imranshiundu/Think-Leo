@@ -8,7 +8,9 @@
  */
 
 import { Leo } from "@/components/leo/Leo";
+import { Sticker } from "@/components/leo/stickers";
 import { motion } from "framer-motion";
+import { Brain, Flame, Laptop, Trophy, Volume2 } from "lucide-react";
 
 export function PhoneGate({ onRetry }: { onRetry: () => void }) {
   return (
@@ -58,13 +60,13 @@ export function PhoneGate({ onRetry }: { onRetry: () => void }) {
           transition={{ delay: 0.55 }}
         >
           {[
-            ["🧠", "Brain quests"],
-            ["🔥", "Daily streaks"],
-            ["🏆", "Star levels"],
-            ["🔊", "Combo sounds"],
-          ].map(([e, t]) => (
+            { icon: <Brain width={15} height={15} className="text-leo-grape" />, t: "Brain quests" },
+            { icon: <Flame width={15} height={15} className="text-leo-sun-deep" />, t: "Daily streaks" },
+            { icon: <Trophy width={15} height={15} className="text-leo-teal-deep" />, t: "Star levels" },
+            { icon: <Volume2 width={15} height={15} className="text-leo-berry-deep" />, t: "Combo sounds" },
+          ].map(({ icon, t }) => (
             <span key={t} className="pill px-3 py-1.5 text-sm text-leo-ink">
-              <span>{e}</span> {t}
+              {icon} {t}
             </span>
           ))}
         </motion.div>
@@ -77,13 +79,26 @@ export function PhoneGate({ onRetry }: { onRetry: () => void }) {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.7 }}
         >
-          💻 Wait — I <i>am</i> on a laptop. Let me in!
+          <Laptop width={15} height={15} /> Wait — I <i>am</i> on a laptop. Let me in!
         </motion.button>
 
         <p className="mt-4 text-xs text-leo-ink-soft/80">
           Think Leo is a PWA — you can install it, but the game itself only runs on
           laptops &amp; desktops.
         </p>
+
+        {/* a friendly sticker parade so even the gate feels alive */}
+        <motion.div
+          className="mt-6 flex items-center gap-2 opacity-80"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.8 }}
+          transition={{ delay: 0.9 }}
+        >
+          <Sticker id="monkey" size={30} />
+          <Sticker id="fish" size={30} />
+          <Sticker id="rocket" size={30} />
+          <Sticker id="cupcake" size={30} />
+        </motion.div>
       </div>
     </div>
   );

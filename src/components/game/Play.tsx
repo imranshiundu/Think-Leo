@@ -6,21 +6,34 @@
  * Phase machine:
  *   intro → play ⇄ reveal → (last round) rushIntro → rush → results
  *                          └─ hearts hit 0 → out
- * Juice: combo meter with escalating sounds, countdown ring, heartbeat
- * vignette, screen shake, Leo reactions, and the ×2 LEO RUSH finale
+ * Juice: combo meter with escalating sounds, countdown ring + heartbeat
+ * pulse, danger vignette, screen shake, Leo reactions, score count-up,
+ * level-up & league-up banners and the ×2 LEO RUSH finale
  * (Candy-Crush "Sugar Crush" moment). Math in docs/ALGORITHM.md §4–6.
  */
 
 import { Leo } from "@/components/leo/Leo";
-import { ChunkyButton, ConfettiBurst, HeartPill, PawProgress, StarRow } from "@/components/game/bits";
+import { ChestArt } from "@/components/leo/badges";
+import { Sticker, StickerTile, isStickerId, type StickerId } from "@/components/leo/stickers";
 import {
-  BASE_POINTS,
-  RUSH_SECONDS,
+  ChunkyButton,
+  ConfettiBurst,
+  HandIcon,
+  HeartPill,
+  KindChip,
+  PawProgress,
+  ScoreCountUp,
+  StarRow,
+  TimerIcon,
+} from "@/components/game/bits";
+import {
   ROUND_COUNT,
+  RUSH_SECONDS,
   chestAfterLevel,
   clamp,
+  leagueOf,
+  playerLevelFromXp,
   questionPoints,
-  questionTime,
   starsFor,
   worldOf,
   xpForRun,
@@ -28,8 +41,9 @@ import {
 } from "@/lib/game";
 import { buildPlan, makeQuestion, makeRushQuestion, type Question } from "@/lib/questions";
 import { sfx } from "@/lib/sound";
-import { useLeo } from "@/lib/store";
+import { useLeo, useQuests } from "@/lib/store";
 import { AnimatePresence, motion } from "framer-motion";
+import { Eye, EyeOff, Medal, PartyPopper, Play as PlayIcon, RotateCcw, Ticket, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Phase = "intro" | "play" | "reveal" | "rushIntro" | "rush" | "out" | "results";
@@ -41,10 +55,13 @@ interface Results {
   total: number;
   isBest: boolean;
   chest: boolean;
+  levelUpTo: number | null;
+  leagueUpTo: string | null;
+  rushHits: number;
 }
 
 const PRAISE = ["Roarrsome!", "Big brain move!", "Yes! Keep going!", "Pawsome!"];
-const UNSTOPPABLE = ["UNSTOPPABLE!", "MEGA COMBO!", "ON FIRE! 🔥", "LEO-LEVEL THINKING!"];
+const UNSTOPPABLE = ["UNSTOPPABLE!", "MEGA COMBO!", "ON FIRE!", "LEO-LEVEL THINKING!"];
 const OOPS = ["Almost!", "So close!", "No worries —"];
 const NO_HEARTS = [
   "Hearts refill over time — brains need naps too!",
@@ -52,6 +69,17 @@ const NO_HEARTS = [
 ];
 
 const PAD_COLORS = ["#58cc02", "#ff5a8c", "#9b5de5", "#ffb020"];
+
+const KIND_LABEL: Record<string, string> = {
+  count: "Count",
+  addsub: "Maths",
+  compare: "Compare",
+  oddOne: "Odd one",
+  sequence: "Sequence",
+  multiply: "Tables",
+  truefalse: "True/trap",
+  memory: "Memory",
+};
 
 export function Play({
   levelIdx,
@@ -67,6 +95,15 @@ export function Play({
   const world = worldOf(levelIdx);
   const plan = useMemo(() => buildPlan(levelIdx), [levelIdx]);
   const attemptRef = useRef(1);
+
+  /* snapshot for level-up / league-up detection */
+  const xpBeforeRef = useRef(0);
+  const leagueBeforeRef = useRef("");
+  useEffect(() => {
+    const s = useLeo.getState();
+    xpBeforeRef.current = s.xp;
+    leagueBeforeRef.current = leagueOf(s.weekXp).name;
+  }, []);
 
   /* ── run state ── */
   const [phase, setPhase] = useState<Phase>("intro");
@@ -91,6 +128,7 @@ export function Play({
   const [rushIdx, setRushIdx] = useState(0);
   const [rushCombo, setRushCombo] = useState(0);
   const [rushScore, setRushScore] = useState(0);
+  const [rushHits, setRushHits] = useState(0);
   const [rushLeft, setRushLeft] = useState(RUSH_SECONDS);
 
   const [results, setResults] = useState<Results | null>(null);
@@ -128,6 +166,7 @@ export function Play({
       setRushIdx(0);
       setRushCombo(0);
       setRushScore(0);
+      setRushHits(0);
       setResults(null);
       setLeoMood("idle");
       setBubble(null);
@@ -171,6 +210,7 @@ export function Play({
         setBubble("LEO RUSH! Everything ×2 — GO GO GO!");
         setPhase("rushIntro");
         sfx.whoosh();
+        sfx.rushGo();
         window.setTimeout(() => {
           setRushQs(Array.from({ length: 30 }, (_, i) => makeRushQuestion(diff, i, attemptRef.current)));
           setRushIdx(0);
@@ -197,6 +237,7 @@ export function Play({
       setRevealOk(ok);
       setAnsweredCount((a) => a + 1);
       setPhase("reveal");
+      const store = useLeo.getState();
 
       if (ok) {
         const pts = questionPoints(combo + 1, fracLeft);
@@ -211,13 +252,15 @@ export function Play({
           return nr;
         });
         setWrongStreak(0);
+        store.trackAnswer(true);
+        store.trackCombo(nc);
         sfx.correct();
         if (nc >= 3) window.setTimeout(() => sfx.combo(nc), 140);
         setLeoMood(nc >= 5 ? "excited" : "happy");
         setBubble(nc >= 5 ? UNSTOPPABLE[nc % UNSTOPPABLE.length] : PRAISE[nc % PRAISE.length]);
       } else {
-        const s = useLeo.getState();
-        s.loseHeart();
+        store.loseHeart();
+        store.trackAnswer(false);
         setCombo(0);
         setWrongStreak((w) => {
           const nw = w + 1;
@@ -266,7 +309,7 @@ export function Play({
       }
     }, 100);
     return () => window.clearInterval(id);
-  }, [phase, qi]);
+  }, [phase, qi, q, handleAnswer]);
 
   /* ── LEO RUSH ────────────────────────────────────────────────── */
 
@@ -279,6 +322,7 @@ export function Play({
     const isBest = stars > 0 && total > (s.best[levelIdx] ?? 0);
     if (!recordedRef.current) {
       recordedRef.current = true;
+      if (rushHits > 0) s.trackRush(rushHits);
       if (stars > 0) {
         s.recordLevel(levelIdx, stars, total);
         s.addXp(xp);
@@ -286,10 +330,20 @@ export function Play({
     }
     const chest = stars > 0 && chestAfterLevel(levelIdx);
     if (chest) s.grantChest(world.id);
-    setResults({ stars, xp, accuracy, total, isBest, chest });
+
+    const sAfter = useLeo.getState();
+    const lvlUp = playerLevelFromXp(sAfter.xp) > playerLevelFromXp(xpBeforeRef.current)
+      ? playerLevelFromXp(sAfter.xp)
+      : null;
+    const leagueUp = leagueOf(sAfter.weekXp).name !== leagueBeforeRef.current
+      ? leagueOf(sAfter.weekXp).name
+      : null;
+
+    setResults({ stars, xp, accuracy, total, isBest, chest, levelUpTo: lvlUp, leagueUpTo: leagueUp, rushHits });
     setPhase("results");
     if (stars > 0) {
       sfx.fanfare();
+      if (leagueUp) window.setTimeout(() => sfx.leagueUp(), 700);
       setConfettiKey((k) => k + 1);
       setLeoMood("celebrate");
       setBubble(stars === 3 ? "PERFECT RUN! I'm roaring the roof off!" : "Level crushed! More stars next time?");
@@ -299,7 +353,7 @@ export function Play({
       setLeoMood("sad");
       setBubble("So close! One more try — I'll cheer for you!");
     }
-  }, [score, rushScore, answeredCount, correctCount, levelIdx, world.id]);
+  }, [score, rushScore, answeredCount, correctCount, rushHits, levelIdx, world.id]);
 
   useEffect(() => {
     if (phase !== "rush") return;
@@ -322,6 +376,7 @@ export function Play({
       const ok = idx === rq.answer;
       if (ok) {
         setRushScore((s) => s + 120);
+        setRushHits((h) => h + 1);
         setRushCombo((c) => {
           const nc = c + 1;
           sfx.combo(nc + 2);
@@ -347,11 +402,26 @@ export function Play({
   const hotCombo = combo >= 5 || (phase === "rush" && rushCombo >= 4);
   const rushQ = phase === "rush" ? rushQs[rushIdx] : null;
 
+  /* heartbeat under danger */
+  useEffect(() => {
+    if (!danger) return;
+    sfx.pulse();
+    const id = window.setInterval(() => sfx.pulse(), 1100);
+    return () => window.clearInterval(id);
+  }, [danger]);
+
+  /* music mood follows the phase: rush gets its own driving loop */
+  useEffect(() => {
+    if (phase === "rush") sfx.startMusic("rush");
+    else if (phase === "results" || phase === "out") sfx.startMusic("home");
+  }, [phase]);
+
   return (
     <div
       className="relative h-screen w-full overflow-hidden"
       style={{ background: `linear-gradient(180deg, ${world.wash[0]}, ${world.wash[1]})` }}
     >
+      <QuestWatch />
       {/* heartbeat vignette */}
       {danger && (
         <div
@@ -370,10 +440,11 @@ export function Play({
           onClick={onExit}
           className="pill cursor-pointer px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
         >
-          ✕ Map
+          <X width={14} height={14} /> Map
         </button>
-        <div className="pill px-3 py-1 font-display text-sm text-leo-ink">
-          {world.emoji} Lv {levelIdx}
+        <div className="pill gap-1.5 px-3 py-1 font-display text-sm text-leo-ink">
+          <Sticker id={world.emblem} size={18} />
+          Lv {levelIdx}
         </div>
         <div className="ml-auto flex items-center gap-2">
           <AnimatePresence mode="popLayout">
@@ -390,7 +461,9 @@ export function Play({
               </motion.div>
             )}
           </AnimatePresence>
-          <div className="pill px-3 py-1 font-display text-sm font-bold text-leo-ink">{score + rushScore} pts</div>
+          <div className="pill px-3 py-1 font-display text-sm font-bold text-leo-ink">
+            {score + rushScore} <span className="font-normal text-leo-ink-soft">pts</span>
+          </div>
           <HeartPill compact />
         </div>
       </div>
@@ -448,7 +521,7 @@ export function Play({
               </div>
             </div>
 
-            {/* mobile Leo line */}
+            {/* compact Leo line */}
             <p className="mt-3 font-display text-sm font-semibold text-leo-ink md:hidden">
               {bubble ?? ""}
             </p>
@@ -501,11 +574,12 @@ export function Play({
                 ×2 RUSH
               </span>
               <span
-                className={`pill px-3 py-1 font-display text-lg font-bold ${
+                className={`pill gap-1.5 px-3 py-1 font-display text-lg font-bold ${
                   rushLeft <= 4 ? "text-leo-berry-deep anim-heartbeat" : "text-leo-ink"
                 }`}
               >
-                ⏱ {rushLeft.toFixed(1)}s
+                <TimerIcon size={15} />
+                {rushLeft.toFixed(1)}s
               </span>
               {rushCombo >= 2 && (
                 <span className="pill px-3 py-1 font-display text-sm font-bold text-leo-sun-deep">
@@ -542,7 +616,9 @@ export function Play({
               </p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
                 <ChunkyButton color="sun" onClick={() => { doRefill(); sfx.flame(); setPhase("intro"); }}>
-                  🎟️ Use refill ({refills})
+                  <span className="inline-flex items-center gap-1.5">
+                    <Ticket width={17} height={17} /> Use refill ({refills})
+                  </span>
                 </ChunkyButton>
                 <ChunkyButton color="cocoa" onClick={onExit}>
                   Back to map
@@ -557,7 +633,7 @@ export function Play({
             key="results"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="absolute inset-0 z-[25] flex flex-col items-center justify-center bg-black/25 px-6 backdrop-blur-[2px]"
+            className="absolute inset-0 z-[25] flex flex-col items-center justify-center overflow-y-auto bg-black/25 px-6 py-6 backdrop-blur-[2px] leo-scroll"
           >
             <motion.div
               initial={{ scale: 0.7, y: 40 }}
@@ -575,28 +651,52 @@ export function Play({
                 <StarRow n={results.stars} size={44} animate />
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2">
-                <Stat label="Score" value={String(results.total)} />
+                <Stat label="Score" value={<ScoreCountUp to={results.total} />} />
                 <Stat label="Accuracy" value={`${Math.round(results.accuracy * 100)}%`} />
                 <Stat label="XP" value={`+${results.xp}`} />
               </div>
+
+              {results.rushHits >= 8 && (
+                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.7 }} className="pill mx-auto mt-3 gap-1.5 px-3 py-1 text-sm text-leo-berry-deep">
+                  <PartyPopper width={15} height={15} /> {results.rushHits} Rush hits!
+                </motion.div>
+              )}
               {results.isBest && (
-                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.9 }} className="pill mx-auto mt-3 px-3 py-1 text-sm text-leo-sun-deep">
-                  🏅 New best score!
+                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.9 }} className="pill mx-auto mt-3 gap-1.5 px-3 py-1 text-sm text-leo-sun-deep">
+                  <Medal width={15} height={15} /> New best score!
                 </motion.div>
               )}
               {results.chest && (
-                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 1.15 }} className="pill mx-auto mt-2 px-3 py-1 text-sm text-leo-ink">
-                  🎁 World chest: +2 refills, +40 XP
+                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 1.15 }} className="pill mx-auto mt-2 gap-1.5 px-3 py-1 text-sm text-leo-ink">
+                  <ChestArt state="open" size={20} /> World chest: +2 refills, +40 XP
                 </motion.div>
               )}
+              {results.leagueUpTo && (
+                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 1.35 }} className="pill mx-auto mt-2 gap-1.5 px-3 py-1 text-sm text-leo-grape">
+                  <ChestArt state="ready" size={18} /> Welcome to the {results.leagueUpTo} league!
+                </motion.div>
+              )}
+              {results.levelUpTo && (
+                <motion.div
+                  initial={{ scale: 0, rotate: -6 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ delay: 1.5, type: "spring", stiffness: 260, damping: 14 }}
+                  className="mx-auto mt-3 rounded-2xl border-[3px] border-leo-leaf-deep bg-gradient-to-r from-leo-leaf to-leo-teal px-5 py-2 font-display text-xl font-bold text-white shadow-[0_5px_0_rgba(63,154,0,0.6)]"
+                >
+                  PLAYER LEVEL {results.levelUpTo}!
+                </motion.div>
+              )}
+
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 {results.stars > 0 && hasNext && (
                   <ChunkyButton color="leaf" size="lg" onClick={onNext}>
-                    Next level →
+                    <span className="inline-flex items-center gap-1.5">Next level</span>
                   </ChunkyButton>
                 )}
                 <ChunkyButton color="sun" onClick={() => resetRun(true)}>
-                  ↻ Replay
+                  <span className="inline-flex items-center gap-1.5">
+                    <RotateCcw width={17} height={17} /> Replay
+                  </span>
                 </ChunkyButton>
                 <ChunkyButton color="cocoa" onClick={onExit}>
                   Map
@@ -612,7 +712,48 @@ export function Play({
 
 /* ── pieces ────────────────────────────────────────────────────── */
 
-function Stat({ label, value }: { label: string; value: string }) {
+/** Pops "Quest complete!" the moment a daily quest fills up mid-run. */
+function QuestWatch() {
+  const { board, progress, claimed } = useQuests();
+  const seen = useRef<Record<string, boolean>>({});
+  const [toast, setToast] = useState<{ label: string; key: number } | null>(null);
+
+  useEffect(() => {
+    board.forEach((q, i) => {
+      const done = (progress[i] ?? 0) >= q.target && !claimed[i];
+      if (done && !seen.current[q.id]) {
+        seen.current[q.id] = true;
+        setToast({ label: q.label, key: Date.now() });
+        sfx.questDone();
+        window.setTimeout(() => setToast(null), 2800);
+      }
+      if (!done) seen.current[q.id] = false;
+    });
+  }, [board, progress, claimed]);
+
+  return (
+    <AnimatePresence>
+      {toast && (
+        <motion.div
+          key={toast.key}
+          initial={{ y: -60, opacity: 0, scale: 0.9 }}
+          animate={{ y: 0, opacity: 1, scale: 1 }}
+          exit={{ y: -40, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          className="absolute left-1/2 top-16 z-[30] -translate-x-1/2"
+        >
+          <div className="flex items-center gap-2 rounded-2xl border-[3px] border-leo-sun bg-white px-4 py-2 shadow-[0_6px_0_rgba(214,178,110,0.4)]">
+            <PartyPopper width={16} height={16} className="text-leo-sun-deep" />
+            <span className="font-display text-sm font-bold text-leo-ink">Quest complete!</span>
+            <span className="text-xs text-leo-ink-soft">{toast.label}</span>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="rounded-xl border-[2.5px] border-leo-line bg-leo-cream px-2 py-2">
       <div className="font-display text-lg font-bold leading-none text-leo-ink">{value}</div>
@@ -676,15 +817,14 @@ function IntroCard({
     >
       <Leo mood="excited" size={170} bubble="Ready to think fast?" />
       <div className="leo-card mt-4 w-full max-w-md p-6 text-center">
-        <div className="font-display text-sm font-semibold uppercase tracking-widest text-leo-ink-soft">
-          {world.emoji} {world.name}
+        <div className="flex items-center justify-center gap-2 font-display text-sm font-semibold uppercase tracking-widest text-leo-ink-soft">
+          <Sticker id={world.emblem} size={22} />
+          {world.name}
         </div>
         <h1 className="font-display text-4xl font-bold text-leo-ink">Level {levelIdx}</h1>
         <div className="mt-2 flex flex-wrap justify-center gap-1.5">
           {plan.map((k, i) => (
-            <span key={i} className="pill px-2 py-0.5 text-[11px] text-leo-ink-soft">
-              {KIND_LABEL[k] ?? k}
-            </span>
+            <KindChip key={i} icon={k as keyof typeof KIND_LABEL} label={KIND_LABEL[k]} />
           ))}
         </div>
         <p className="mt-3 text-sm leading-relaxed text-leo-ink-soft">
@@ -696,7 +836,9 @@ function IntroCard({
             <p className="mb-2 font-display text-base font-bold text-leo-berry-deep">No hearts left!</p>
             <div className="flex flex-wrap justify-center gap-2">
               <ChunkyButton color="sun" onClick={onRefill} disabled={refills <= 0}>
-                🎟️ Use refill ({refills})
+                <span className="inline-flex items-center gap-1.5">
+                  <Ticket width={17} height={17} /> Use refill ({refills})
+                </span>
               </ChunkyButton>
               <ChunkyButton color="cocoa" onClick={onExit}>
                 Back to map
@@ -705,8 +847,10 @@ function IntroCard({
           </div>
         ) : (
           <div className="mt-5">
-            <ChunkyButton color="leaf" size="xl" onClick={onStart}>
-              ▶ START
+            <ChunkyButton color="leaf" size="xl" onClick={onStart} ariaLabel="Start the level">
+              <span className="inline-flex items-center gap-2">
+                <PlayIcon width={22} height={22} className="fill-white" /> START
+              </span>
             </ChunkyButton>
           </div>
         )}
@@ -714,17 +858,6 @@ function IntroCard({
     </motion.div>
   );
 }
-
-const KIND_LABEL: Record<string, string> = {
-  count: "🔢 Count",
-  addsub: "➕ Maths",
-  compare: "⚖️ Compare",
-  oddOne: "🔍 Odd one",
-  sequence: "🧩 Sequence",
-  multiply: "✖️ Tables",
-  truefalse: "🎯 True/trap",
-  memory: "🎵 Memory",
-};
 
 /* ── question stage ────────────────────────────────────────────── */
 
@@ -751,12 +884,10 @@ function QuestionStage({
         </div>
       )}
 
-      {q.kind === "count" && q.emojis && (
-        <div className="mx-auto flex max-w-md flex-wrap justify-center gap-1.5 py-2 text-4xl">
-          {q.emojis.map((e, i) => (
-            <motion.span key={i} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: i * 0.03 }}>
-              {e}
-            </motion.span>
+      {q.kind === "count" && q.tiles && (
+        <div className="mx-auto flex max-w-md flex-wrap justify-center gap-1.5 py-2">
+          {q.tiles.map((t, i) => (
+            <StickerTile key={i} id={t} size={54} delay={i * 0.03} />
           ))}
         </div>
       )}
@@ -786,15 +917,18 @@ function QuestionStage({
           className={`mt-3 grid gap-2.5 ${
             q.options.length <= 2
               ? "grid-cols-2"
-              : q.options.every((o) => o.length <= 3)
+              : q.kind === "oddOne"
                 ? "grid-cols-4"
-                : "grid-cols-2"
+                : q.options.every((o) => o.length <= 3)
+                  ? "grid-cols-4"
+                  : "grid-cols-2"
           }`}
         >
           {q.options.map((opt, i) => {
             const isCorrect = reveal && i === q.answer;
             const isWrongPick = reveal && picked === i && i !== q.answer;
             const plate = q.groupOptions?.[i];
+            const isArt = q.kind === "oddOne" && isStickerId(opt);
             return (
               <motion.button
                 key={i}
@@ -805,18 +939,24 @@ function QuestionStage({
                 whileHover={!reveal ? { y: -3 } : undefined}
                 whileTap={!reveal ? { scale: 0.96 } : undefined}
                 className={`answer-bubble flex min-h-[64px] cursor-pointer items-center justify-center px-3 py-3 ${
-                  q.kind === "oddOne" ? "text-4xl" : q.kind === "truefalse" ? "font-display text-2xl font-bold" : "font-display text-2xl font-bold text-leo-ink"
+                  isArt
+                    ? ""
+                    : q.kind === "truefalse"
+                      ? "font-display text-2xl font-bold"
+                      : "font-display text-2xl font-bold text-leo-ink"
                 } ${q.kind === "truefalse" ? (i === 0 ? "bg-[#e9ffcf]" : "bg-[#ffe4ec]") : ""}`}
               >
                 {plate ? (
                   <span className="flex flex-col items-center gap-1">
-                    <span className="flex max-w-[180px] flex-wrap justify-center gap-0.5 text-xl">
-                      {plate.map((e, j) => (
-                        <span key={j}>{e}</span>
+                    <span className="flex max-w-[200px] flex-wrap justify-center gap-0.5">
+                      {plate.map((t, j) => (
+                        <Sticker key={j} id={t} size={24} />
                       ))}
                     </span>
                     <span className="font-display text-lg font-bold text-leo-ink">{opt}</span>
                   </span>
+                ) : isArt ? (
+                  <Sticker id={opt as StickerId} size={52} />
                 ) : (
                   opt
                 )}
@@ -881,8 +1021,24 @@ function MemoryPads({
 
   return (
     <div className="flex flex-col items-center gap-3 py-1">
-      <span className={`font-display text-sm font-bold ${watching ? "text-leo-grape" : "text-leo-leaf-deep"}`}>
-        {watching ? "👀 WATCH…" : flash === "ok" ? "🎉 PERFECT!" : flash === "bad" ? "Oops…" : "🖐 YOUR TURN — repeat it!"}
+      <span className={`flex items-center gap-1.5 font-display text-sm font-bold ${watching ? "text-leo-grape" : "text-leo-leaf-deep"}`}>
+        {watching ? (
+          <>
+            <Eye width={15} height={15} /> WATCH…
+          </>
+        ) : flash === "ok" ? (
+          <>
+            <PartyPopper width={15} height={15} /> PERFECT!
+          </>
+        ) : flash === "bad" ? (
+          <>
+            <EyeOff width={15} height={15} /> Oops…
+          </>
+        ) : (
+          <>
+            <HandIcon size={15} /> YOUR TURN — repeat it!
+          </>
+        )}
       </span>
       <div className="grid grid-cols-2 gap-3">
         {PAD_COLORS.map((color, i) => {

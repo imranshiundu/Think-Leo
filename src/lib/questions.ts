@@ -6,9 +6,13 @@
  * so a question set is reproducible inside one attempt, but every new
  * attempt feels fresh. Difficulty (1..6) scales numbers, rules and
  * distractors. See docs/ALGORITHM.md §4–5.
+ *
+ * All art is referenced by sticker id (see components/leo/stickers.tsx) —
+ * the factory never ships emoji strings.
  */
 
 import { clamp, questionTime, worldOf } from "./game";
+import type { StickerId } from "@/components/leo/stickers";
 
 export type QKind =
   | "count"
@@ -25,12 +29,12 @@ export interface Question {
   kind: QKind;
   prompt: string; // kid-facing instruction
   display?: string; // big centered formula, e.g. "7 + 5 = ?"
-  emojis?: string[]; // count grid / odd-one tiles
-  groups?: [string[], string[]]; // compare: two emoji plates
+  tiles?: StickerId[]; // count grid / odd-one board
+  groups?: [StickerId[], StickerId[]]; // compare: two sticker plates
   seq?: (string | number)[]; // sequence tiles, "?" last
   pads?: number[]; // memory: pad indices (0..3) in order
-  options: string[];
-  groupOptions?: [string[], string[]]; // options rendered as emoji plates
+  options: string[]; // numbers, "TRUE!"/"NOPE!", or sticker ids (oddOne)
+  groupOptions?: [StickerId[], StickerId[]]; // compare options rendered as plates
   answer: number; // index into options
   time: number; // seconds on the clock
   diff: number;
@@ -103,37 +107,38 @@ function numOptions(
   return { options: all.map(String), answer: all.indexOf(correct) };
 }
 
-/* ── world-flavoured emoji pools ────────────────────────────────── */
+/* ── world-flavoured sticker pools ──────────────────────────────── */
 
-const COUNT_EMOJI: string[][] = [
-  ["🐒", "🦜", "🐘", "🦋", "🦒", "🌺"],
-  ["🐠", "🐙", "🦀", "🐬", "🦑", "🐚"],
-  ["⭐", "🛸", "👽", "☄️", "🌙", "🌟"],
-  ["🍬", "🍭", "🧁", "🍩", "🍫", "🍪"],
+const WORLD_TILES: StickerId[][] = [
+  ["monkey", "parrot", "butterfly", "flower", "elephant"],
+  ["fish", "octopus", "crab", "dolphin", "shell"],
+  ["star", "rocket", "ufo", "moon", "comet"],
+  ["candy", "lollipop", "cupcake", "donut", "cookie"],
 ];
 
-const ODD_GROUPS: { set: string[]; similar: number[] }[] = [
-  { set: ["🍎", "🍌", "🍇", "🍓", "🍊"], similar: [1] }, // fruits ~ veggies
-  { set: ["🥕", "🥦", "🌽", "🥒", "🌶️"], similar: [0] },
-  { set: ["🐶", "🐱", "🐹", "🐰"], similar: [3] }, // pets ~ farm
-  { set: ["🐄", "🐷", "🐔", "🐑"], similar: [2] },
-  { set: ["🐠", "🐙", "🦀", "🐬"], similar: [5] }, // sea ~ bugs
-  { set: ["🦋", "🐝", "🐞", "🦗"], similar: [4] },
-  { set: ["🚗", "🚌", "🚒", "🚑"], similar: [7] }, // road ~ space
-  { set: ["🚀", "🛸", "🌕", "☄️"], similar: [6] },
+/** Odd-one families: 4+ members, `similar` = look-alike category indexes. */
+const ODD_GROUPS: { set: StickerId[]; similar: number[] }[] = [
+  { set: ["apple", "banana", "grapes", "strawberry"], similar: [1] }, // fruit ~ veg
+  { set: ["carrot", "broccoli", "corn", "chili"], similar: [0] },
+  { set: ["dog", "cat", "rabbit", "mouse"], similar: [3] }, // pets ~ farm
+  { set: ["cow", "pig", "chicken", "sheep"], similar: [2] },
+  { set: ["fish", "octopus", "crab", "dolphin"], similar: [5] }, // sea ~ bugs
+  { set: ["butterfly", "bee", "ladybug", "snail"], similar: [4] },
+  { set: ["car", "bus", "tractor"], similar: [7] }, // road ~ space
+  { set: ["rocket", "ufo", "moon", "comet"], similar: [6] },
 ];
 
 /* ── generators ─────────────────────────────────────────────────── */
 
 function genCount(rng: Rng, diff: number, world: number): Partial<Question> {
-  const pool = COUNT_EMOJI[world] ?? COUNT_EMOJI[0];
+  const pool = WORLD_TILES[world] ?? WORLD_TILES[0];
   const e = oneOf(rng, pool);
   const n = clamp(3 + irnd(rng, 0, 2 + diff * 2), 3, 16);
-  const emojis = Array.from({ length: n }, () => e);
+  const tiles = Array.from({ length: n }, () => e);
   const { options, answer } = numOptions(rng, n, Math.min(4, 1 + Math.ceil(diff / 2)), 1);
   return {
     prompt: "How many do you see?",
-    emojis,
+    tiles,
     options,
     answer,
     tip: "Touch each one and count out loud!",
@@ -174,13 +179,14 @@ function genAddSub(rng: Rng, diff: number): Partial<Question> {
 
 function genCompare(rng: Rng, diff: number, world: number): Partial<Question> {
   if (diff === 1) {
-    const pool = COUNT_EMOJI[world] ?? COUNT_EMOJI[0];
-    const [e1, e2] = [oneOf(rng, pool), oneOf(rng, pool.filter((x) => x !== pool[0]))];
+    const pool = WORLD_TILES[world] ?? WORLD_TILES[0];
+    const e1 = oneOf(rng, pool);
+    const e2 = oneOf(rng, pool.filter((x) => x !== e1));
     let a = irnd(rng, 2, 6);
     let b = irnd(rng, 2, 6);
     if (a === b) b = a === 6 ? 5 : a + 1;
     const bigger = Math.max(a, b);
-    const groups: [string[], string[]] = [
+    const groups: [StickerId[], StickerId[]] = [
       Array.from({ length: a }, () => e1),
       Array.from({ length: b }, () => e2),
     ];
@@ -224,8 +230,8 @@ function genOddOne(rng: Rng, diff: number): Partial<Question> {
   const tiles = shuffled(rng, [...three, intruder]);
   return {
     prompt: "One doesn't belong. Tap it!",
-    emojis: tiles,
-    options: tiles,
+    tiles,
+    options: tiles, // options are sticker ids, rendered as art
     answer: tiles.indexOf(intruder),
     tip: "Three are a family — who's visiting from somewhere else?",
   };

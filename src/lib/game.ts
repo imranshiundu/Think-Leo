@@ -6,6 +6,9 @@
  * Full math explained in docs/ALGORITHM.md.
  */
 
+import type { StickerId } from "@/components/leo/stickers";
+import type { BadgeId } from "@/components/leo/badges";
+
 export type Mood =
   | "idle"
   | "happy"
@@ -18,7 +21,7 @@ export type Mood =
 export interface World {
   id: number;
   name: string;
-  emoji: string;
+  emblem: StickerId; // illustrated world mark (replaces emoji)
   tagline: string;
   node: string; // level-node fill
   edge: string; // level-node bottom edge
@@ -30,7 +33,7 @@ export const WORLDS: World[] = [
   {
     id: 0,
     name: "Jungle Jam",
-    emoji: "🌴",
+    emblem: "monkey",
     tagline: "Count, add & spot the odd one out",
     node: "#58cc02",
     edge: "#3f9a00",
@@ -40,7 +43,7 @@ export const WORLDS: World[] = [
   {
     id: 1,
     name: "Coral Cove",
-    emoji: "🌊",
+    emblem: "fish",
     tagline: "Compare, sequence & think fast",
     node: "#2ec4b6",
     edge: "#1e9e92",
@@ -50,7 +53,7 @@ export const WORLDS: World[] = [
   {
     id: 2,
     name: "Space Hop",
-    emoji: "🚀",
+    emblem: "rocket",
     tagline: "Times tables & memory rockets",
     node: "#9b5de5",
     edge: "#7a3fc4",
@@ -60,7 +63,7 @@ export const WORLDS: World[] = [
   {
     id: 3,
     name: "Candy Peak",
-    emoji: "🍭",
+    emblem: "lollipop",
     tagline: "The big brain championship",
     node: "#ff5a8c",
     edge: "#d63a6c",
@@ -146,19 +149,26 @@ export function playerLevelFromXp(xp: number): number {
 }
 
 /** Weekly league tiers — cosmetic bragging rights, reset every Monday. */
-export const LEAGUES = [
-  { name: "Grass", min: 0, emoji: "🌱", color: "#58cc02" },
-  { name: "Bronze", min: 150, emoji: "🥉", color: "#c47a3d" },
-  { name: "Silver", min: 350, emoji: "🥈", color: "#9aa7b5" },
-  { name: "Gold", min: 700, emoji: "🥇", color: "#ffc93c" },
-  { name: "Crystal", min: 1200, emoji: "💎", color: "#2ec4b6" },
-  { name: "Legend", min: 2000, emoji: "🏆", color: "#9b5de5" },
-] as const;
+export const LEAGUES: { name: string; min: number; badge: BadgeId; color: string }[] = [
+  { name: "Grass", min: 0, badge: "sprout", color: "#58cc02" },
+  { name: "Bronze", min: 150, badge: "bronze", color: "#c47a3d" },
+  { name: "Silver", min: 350, badge: "silver", color: "#9aa7b5" },
+  { name: "Gold", min: 700, badge: "gold", color: "#ffc93c" },
+  { name: "Crystal", min: 1200, badge: "gem", color: "#2ec4b6" },
+  { name: "Legend", min: 2000, badge: "trophy", color: "#9b5de5" },
+];
 
 export function leagueOf(weekXp: number) {
   let cur = LEAGUES[0];
-  for (const l of LEAGUES) if (weekXp >= l.min) cur = l;
-  return cur;
+  let idx = 0;
+  LEAGUES.forEach((l, i) => {
+    if (weekXp >= l.min) {
+      cur = l;
+      idx = i;
+    }
+  });
+  const next = LEAGUES[idx + 1] ?? null;
+  return { ...cur, index: idx, next };
 }
 
 /** ISO-week key like 2026-W45, used for league resets. */
@@ -185,6 +195,16 @@ export function yesterdayKey(): string {
   return dayKey(d);
 }
 
+/** Whole days between two day keys (b - a). */
+export function daysBetween(a: string, b: string): number {
+  if (!a || !b) return 0;
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  const da = Date.UTC(ay, am - 1, ad);
+  const db = Date.UTC(by, bm - 1, bd);
+  return Math.round((db - da) / 86400000);
+}
+
 export function isUnlocked(levelIdx: number, stars: Record<number, number>): boolean {
   return levelIdx <= 1 || (stars[levelIdx - 1] ?? 0) >= 1;
 }
@@ -196,7 +216,104 @@ export function chestAfterLevel(levelIdx: number): boolean {
 
 export const CHEST_REWARDS = { refills: 2, xp: 40 } as const;
 
-/** Leo's encouragement — picked by mood across the app. */
+/* ════════════════════════════════════════════════════════════════
+   DAILY QUESTS — the "why do I open it today" engine (§13.1)
+   Three quests per local day, picked deterministically from the
+   day key so every device sees the same board on the same day.
+   ════════════════════════════════════════════════════════════════ */
+
+export type QuestEvent =
+  | "xp" // cumulative XP earned today
+  | "correct" // correct answers today
+  | "levels" // levels finished (≥1 star) today
+  | "maxcombo" // best combo reached today (progress = max, not sum)
+  | "stars3" // levels finished with 3 stars today
+  | "rushhits"; // correct answers inside one single LEO RUSH
+
+export interface QuestDef {
+  id: string;
+  label: string;
+  event: QuestEvent;
+  target: number;
+  rewardXp: number;
+  icon: "zap" | "brain" | "map" | "star" | "rocket" | "flame";
+}
+
+export const QUEST_POOL: QuestDef[] = [
+  { id: "xp60", label: "Earn 60 XP", event: "xp", target: 60, rewardXp: 20, icon: "zap" },
+  { id: "xp120", label: "Earn 120 XP", event: "xp", target: 120, rewardXp: 35, icon: "zap" },
+  { id: "correct10", label: "Answer 10 puzzles right", event: "correct", target: 10, rewardXp: 20, icon: "brain" },
+  { id: "correct18", label: "Answer 18 puzzles right", event: "correct", target: 18, rewardXp: 35, icon: "brain" },
+  { id: "levels2", label: "Finish 2 levels", event: "levels", target: 2, rewardXp: 25, icon: "map" },
+  { id: "combo5", label: "Reach a ×5 combo", event: "maxcombo", target: 5, rewardXp: 25, icon: "flame" },
+  { id: "combo8", label: "Reach a ×8 combo", event: "maxcombo", target: 8, rewardXp: 35, icon: "flame" },
+  { id: "stars3", label: "Get 3 stars on a level", event: "stars3", target: 1, rewardXp: 30, icon: "star" },
+  { id: "rush8", label: "8 Rush hits in one LEO RUSH", event: "rushhits", target: 8, rewardXp: 30, icon: "rocket" },
+];
+
+/** Deterministic 3-quest board for a given day (same board all week-end). */
+export function questsForDay(day: string, dailyGoalXp = DAILY_GOAL_XP): QuestDef[] {
+  let h = 2166136261;
+  for (let i = 0; i < day.length; i++) {
+    h ^= day.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const rng = [0, 0, 0].map((_, i) => {
+    h = Math.imul(h ^ (i + 1), 2654435761);
+    return ((h >>> 0) % 1000) / 1000;
+  });
+  // Slot 1 always anchors the daily goal (xp 60 or 120) — the ring and the
+  // quest board then tell one story, not two.
+  const anchor = dailyGoalXp >= 120 ? "xp120" : "xp60";
+  const pool = QUEST_POOL.filter((q) => q.id !== anchor);
+  const picked: QuestDef[] = [QUEST_POOL.find((q) => q.id === anchor)!];
+  for (const r of rng) {
+    const q = pool[Math.floor(r * pool.length)];
+    if (!picked.includes(q)) picked.push(q);
+  }
+  let guard = 0;
+  while (picked.length < 3 && guard++ < 50) {
+    const q = pool[guard % pool.length];
+    if (!picked.includes(q)) picked.push(q);
+  }
+  return picked;
+}
+
+export const QUEST_ALL_DONE_BONUS = { xp: 20, refill: 1 } as const;
+
+/* ════════════════════════════════════════════════════════════════
+   ACHIEVEMENTS — the trophy wall (§13.2)
+   One-time unlocks; each pays a small XP bounty the moment it pops.
+   `test` is a pure predicate over the save snapshot.
+   ════════════════════════════════════════════════════════════════ */
+
+export interface AchDef {
+  id: string;
+  name: string;
+  desc: string;
+  icon: "star" | "flame" | "zap" | "rocket" | "crown" | "map" | "brain" | "trophy" | "gem" | "medal";
+  xp: number;
+}
+
+export const ACH_DEFINITIONS: Record<string, AchDef> = {
+  firstStar: { id: "firstStar", name: "First Spark", desc: "Earn your very first star", icon: "star", xp: 40 },
+  flawless: { id: "flawless", name: "Flawless Roar", desc: "Finish a level with 3 stars", icon: "star", xp: 60 },
+  combo10: { id: "combo10", name: "Combo King", desc: "Reach a ×10 combo", icon: "zap", xp: 60 },
+  rushAce: { id: "rushAce", name: "Rush Ace", desc: "12 hits in one LEO RUSH", icon: "rocket", xp: 60 },
+  streak3: { id: "streak3", name: "Heating Up", desc: "3-day streak", icon: "flame", xp: 40 },
+  streak7: { id: "streak7", name: "Week of Fire", desc: "7-day streak", icon: "flame", xp: 80 },
+  streak14: { id: "streak14", name: "Fortnight Legend", desc: "14-day streak", icon: "crown", xp: 120 },
+  trail10: { id: "trail10", name: "Trail Blazer", desc: "Stars on 10 levels", icon: "map", xp: 60 },
+  collector25: { id: "collector25", name: "Star Collector", desc: "Stars on 25 levels", icon: "medal", xp: 100 },
+  champion40: { id: "champion40", name: "Brain Champion", desc: "Stars on all 40 levels", icon: "trophy", xp: 200 },
+  century: { id: "century", name: "Century Brain", desc: "100 correct answers", icon: "brain", xp: 60 },
+  megamind: { id: "megamind", name: "Mega Mind", desc: "500 correct answers", icon: "brain", xp: 120 },
+  hunter: { id: "hunter", name: "Treasure Hunter", desc: "Open 2 world chests", icon: "gem", xp: 50 },
+  rising5: { id: "rising5", name: "Rising Star", desc: "Reach player level 5", icon: "medal", xp: 50 },
+  legendLeague: { id: "legendLeague", name: "Gold Roar", desc: "Reach the Gold league", icon: "trophy", xp: 80 },
+};
+
+/* ── Leo's encouragement — picked by mood across the app ──────── */
 export const LEO_LINES: Record<string, string[]> = {
   morning: [
     "Roar! Morning brain, best brain!",
@@ -213,8 +330,8 @@ export const LEO_LINES: Record<string, string[]> = {
     "One more level before stars come out?",
     "Shhh… the puzzles are sleeping. Wake them up!",
   ],
-  streak3: ["Three days strong! Keep the flame alive! 🔥"],
-  streak7: ["A WHOLE WEEK of thinking! You're legendary! 🔥"],
+  streak3: ["Three days strong! Keep the flame alive!"],
+  streak7: ["A WHOLE WEEK of thinking! You're legendary!"],
   comeback: ["You came back! My mane is doing a happy dance."],
   zeroHearts: [
     "Hearts refill over time — brains need naps too!",

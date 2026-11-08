@@ -20,6 +20,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import type { Mood } from "@/lib/game";
+import { Sparkle } from "@/components/leo/badges";
 
 interface Look {
   eyes: "open" | "happy" | "closed" | "star" | "wide";
@@ -106,9 +107,15 @@ export function Leo({ mood = "idle", size = 200, className = "", bubble = null }
 
       {sparkle && (
         <>
-          <span className="anim-drift absolute -left-3 top-6 text-xl" style={{ animationDelay: "0s" }}>✨</span>
-          <span className="anim-drift absolute -right-4 top-14 text-lg" style={{ animationDelay: "1.2s" }}>⭐</span>
-          <span className="anim-drift absolute right-2 top-0 text-base" style={{ animationDelay: "2.1s" }}>✨</span>
+          <span className="anim-drift absolute -left-3 top-6" style={{ animationDelay: "0s" }}>
+            <Sparkle size={20} />
+          </span>
+          <span className="anim-drift absolute -right-4 top-14" style={{ animationDelay: "1.2s" }}>
+            <Sparkle size={16} color="#FFB020" />
+          </span>
+          <span className="anim-drift absolute right-2 top-0" style={{ animationDelay: "2.1s" }}>
+            <Sparkle size={14} color="#FF8AB8" />
+          </span>
         </>
       )}
 
