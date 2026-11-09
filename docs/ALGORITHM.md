@@ -219,11 +219,15 @@ After puzzle 8, if at least one heart survived:
 ```
 accuracy   = correctAnswers / answeredPuzzles        (main round only)
 stars      = 3 if ≥90% · 2 if ≥70% · 1 if ≥50% · else 0
-XP         = ⌊totalScore / 12⌋ + stars × 15          (0 XP on a failed run)
+XP         = 8 + stars × 6 + min(16, ⌊totalScore / 250⌋)   (0 XP on a failed run)
 ```
 
 Stars gate the map; score feeds best-score badges; XP feeds everything else.
-A typical first-clear earns ~90–140 XP — one level ≈ one day's goal ring.
+A typical clear earns **26–38 XP**, so the 120-XP daily goal ≈ 3–4 levels and
+player levels arrive every handful of runs. Score stays deliberately big and
+juicy on the results screen (thousands) — XP is the *slow*, meaningful currency.
+Any finished run — even 0 stars — also calls `noteActivity()`, which counts the
+day for the streak and the play strip: effort always leaves a trace.
 
 ---
 
@@ -233,8 +237,11 @@ A typical first-clear earns ~90–140 XP — one level ≈ one day's goal ring.
 
 ```
 xpToNext(l) = 120 + (l − 1) × 80            // gentle super-linear curve
-dailyGoal   = 120 XP                        // ≈ one good level run
+dailyGoal   = 120 XP                        // ≈ 3–4 level runs
 ```
+
+Achievement bounties (§13.2) pay 40–200 XP each, so early levels and the
+first badges land inside the first session — dopamine up front, grind after.
 
 ### 6.2 Hearts (scarcity, softened)
 
@@ -249,12 +256,12 @@ heart starts the clock only if the tank was full.
 
 ### 6.3 Streaks (loss-aversion, softened)
 
-On the first XP of a local day:
+On the first play of a local day — XP *or* any finished run (`noteActivity`):
 
 ```
 lastPlayDay == yesterday → streak + 1
-gap day + freeze available → consume 1 freeze, streak + 1 (saved!)
-otherwise                → streak = 1
+gap = 2 days + freeze available → consume 1 freeze, streak + 1 (saved!)
+otherwise                → streak = 1   (first-ever play starts at 1 too)
 milestones: day 3 → +1 freeze · day 7 → +2 freezes
 ```
 
@@ -264,9 +271,9 @@ streak only *breaks* after a full missed day without a freeze.
 ### 6.4 Weekly league
 
 `weekKey()` = ISO week. Weekly XP resets each ISO week and maps to cosmetic
-tiers: 🌱 Grass 0 · 🥉 Bronze 150 · 🥈 Silver 350 · 🥇 Gold 700 · 💎 Crystal
-1200 · 🏆 Legend 2000. No real-player leaderboards — the opponent is
-yourself.
+tiers: Grass 0 · Bronze 100 · Silver 250 · Gold 500 · Crystal 900 · Legend
+1500. Calibrated to the XP economy: Bronze ≈ 2–3 playing days, Gold is a
+committed week. No real-player leaderboards — the opponent is yourself.
 
 ---
 
@@ -330,13 +337,25 @@ combo 10+: + double-octave triplet fanfare      (perfect-streak territory)
 The root also *rises with the combo* (semitone per streak, capped at 12), so
 long streaks literally climb a scale.
 
-### 8.4 The music loop
+### 8.4 The music (real tracks, not synth)
 
-"Candy Waltz": a 4-chord pad (C–G–Am–F) with a randomized pentatonic pluck
-melody, lookahead-scheduled on a 300 ms timer (gapless without a media file).
-Home tempo 2.4 s/bar; play mode speeds to 1.9 s/bar and adds hi-hat ticks.
-Music bus sits at ~5% gain — feel, not announce. Both SFX and music are
-toggleable and the setting persists.
+The v2 synth loop was replaced with **licensed background tracks** after the
+music failed to earn its keep — the kid-facing rule: *if we can't ship a good
+soundtrack, ship none.* Three tracks by Kevin MacLeod (incompetech.com,
+CC BY 4.0, credited in the Home footer), trimmed, loudness-normalized to
+≈ −19 LUFS and looped:
+
+| Mood | Track | Where |
+| --- | --- | --- |
+| home | "Carefree" (96 s loop) | hub & level map |
+| play | "Monkeys Spinning Monkeys" (121 s) | gameplay |
+| rush | "Sneaky Snitch" (46 s) | LEO RUSH finale |
+
+The player (`sound.ts`) crossfades between moods (~0.9 s), **ducks** to ~22%
+under big cues (fanfare, level-up) and rides back, pauses on tab-hide
+(battery manners) and retries on the next gesture when the browser blocks
+autoplay — the requested mood is remembered, so music *always* starts as
+soon as it is allowed to. Music sits under the SFX mix, never on top.
 
 ---
 
@@ -358,6 +377,25 @@ iPads pretending to be Macs) don't. `watchDevice()` re-checks on
 resize/rotation, and the gate screen has an honest escape hatch ("Wait — I am
 on a laptop") that re-runs detection. While gated, *nothing* of the game
 renders — not even behind a loader.
+
+### 9.1 Device details are recorded (both sides of the gate)
+
+`src/lib/deviceInfo.ts` builds an anonymous hardware snapshot on every load:
+
+```
+kind (laptop/mobile) · formFactor (Phone/Tablet/Laptop/Desktop)
+os · browser · platform · screen · viewport · pixelRatio
+cpuCores · ramGB · touchPoints · language · timezone
+online · standalone (installed PWA?) · gpu renderer · UA (truncated)
+```
+
+It is stored twice: locally (`localStorage`, last 20 visits) and POSTed to
+`/api/device`, which validates the payload with zod and appends a
+`DeviceVisit` row to the SQLite database (Prisma). Reporting is throttled to
+twice a day per device and is strictly fire-and-forget — the game never waits
+on the network. The gate screen shows the detected device back to the visitor
+("We spotted: Phone · Android · Chrome · 393×873"), which proves the detection
+is real, not a vibe.
 
 ---
 
@@ -395,12 +433,38 @@ app never flashes unhydrated state.
 
 ## 12. PWA shape
 
-- `manifest.webmanifest`: standalone, theme `#FFB020`, maskable + any icons.
-- `public/sw.js`: precaches the shell; cache-first for `/_next/static` and
-  icons; network-first for navigations with cached-shell fallback → **the
-  game fully boots offline** (all state is local, all audio is synthesized).
+- `manifest.webmanifest`: standalone (+ `display_override`,
+  `launch_handler: navigate-existing`), theme `#FFB020`, maskable + any icons.
+- `public/sw.js` **v3**: precaches the shell, icons and the three music
+  tracks; cache-first for `/_next/static`, icons and `/audio/*`; network-first
+  for navigations with cached-shell fallback → **the game fully boots and
+  sounds right offline**. `SKIP_WAITING` + `clients.claim()` plus a
+  controller-change reload keep installed apps auto-updated.
+- Registration happens at the root layout — the service worker installs even
+  on the phone gate, so the installed app on any device is a real PWA.
 - Install prompt captured via `beforeinstallprompt` and surfaced as a chunky
   button on Home.
+
+---
+
+## 12.1 Save-state engine contract (v3 — regression notes)
+
+Three invariants were learned the hard way and are covered by
+`scripts/store-test.ts` (run with `bun scripts/store-test.ts`):
+
+1. `questsForDay(day)` returns **exactly 3 quests with distinct event types**.
+   The save engine indexes progress by board position; two quests on one event
+   or a 4-row board once wiped progress on every write.
+2. State helpers are **pure and rebased**: `bumpQuests` / `ensureQuestDay`
+   take a snapshot and return a new snapshot — they never re-read `get()`
+   mid-transaction. (A re-read used to discard the stars `recordLevel` had
+   just built: levels finished, nothing saved, unlocks frozen.)
+3. Every XP grant and every finished run flows through `bumpPlayDay`, which
+   owns streak / playDays / lastPlayDay — first-ever play starts the streak
+   at 1, milestones mint freezes.
+
+Migration: v2 saves (inflated XP era) are rescaled ÷12 on load, boards are
+rebuilt, stars/best survive.
 
 ---
 

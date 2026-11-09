@@ -18,7 +18,7 @@
  *   sleep       closed            flat      down     slow breathe
  */
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, type TargetAndTransition } from "framer-motion";
 import type { Mood } from "@/lib/game";
 import { Sparkle } from "@/components/leo/badges";
 
@@ -62,7 +62,7 @@ function starPath(cx: number, cy: number, ro: number, ri: number): string {
   return d + "Z";
 }
 
-const BOB_VARIANTS: Record<Look["bob"], object> = {
+const BOB_VARIANTS: Record<Look["bob"], TargetAndTransition> = {
   idle: { y: [0, -4, 0], transition: { duration: 2.8, repeat: Infinity, ease: "easeInOut" } },
   bounce: { y: [0, -18, 0], scaleY: [1, 1.05, 0.94, 1], transition: { duration: 0.62, repeat: Infinity, ease: "easeOut" } },
   dance: {

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fredoka, Nunito } from "next/font/google";
+import { PWARegister } from "@/components/PWARegister";
 import "./globals.css";
 
 // Typography research (see docs/ALGORITHM.md §1.3): rounded, friendly,
@@ -56,6 +57,7 @@ export default function RootLayout({
       <body
         className={`${fredoka.variable} ${nunito.variable} antialiased bg-background text-foreground overflow-hidden`}
       >
+        <PWARegister />
         {children}
       </body>
     </html>

@@ -373,6 +373,10 @@ export function Home({
               <span>
                 <b className="font-display text-sm text-leo-ink">For grown-ups:</b> kid-safe by design —
                 no ads, no purchases, no chat. Progress saves on this device and works offline. Best on a laptop.
+                <span className="mt-0.5 block text-[10px] opacity-75">
+                  Music: &ldquo;Carefree&rdquo;, &ldquo;Monkeys Spinning Monkeys&rdquo;, &ldquo;Sneaky Snitch&rdquo; by Kevin MacLeod
+                  (incompetech.com) — licensed under CC BY 4.0.
+                </span>
               </span>
             </div>
             {installEvt && (

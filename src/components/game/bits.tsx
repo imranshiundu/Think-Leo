@@ -461,8 +461,8 @@ function PuzzleIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-export function KindChip({ icon, label }: { icon: keyof typeof KIND_ICONS; label?: string }) {
-  const Icon = KIND_ICONS[icon];
+export function KindChip({ icon, label }: { icon: string; label?: string }) {
+  const Icon = KIND_ICONS[icon as keyof typeof KIND_ICONS] ?? Target;
   return (
     <span className="pill px-2.5 py-0.5 text-[11px] text-leo-ink-soft">
       <Icon width={12} height={12} />
