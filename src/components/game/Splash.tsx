@@ -1,26 +1,40 @@
 "use client";
 
 /**
- * Think Leo — Startup animation
- * ─────────────────────────────
- * Leo roars in from below (with an actual synthesized roar), the wordmark
- * pops letter by letter, a star burst fires, sticker confetti drifts,
- * then the curtain lifts. Tap anywhere to skip. Only plays in full once
- * per browser session (see ThinkLeo root).
+ * Think Leo — Startup animation (v4, GSAP-choreographed)
+ * ──────────────────────────────────────────────────────
+ * This is what a kid sees in the second after tapping the Think Leo icon
+ * on a phone — so it must feel like the app ICON came alive:
+ *
+ *   1. the app-icon card drops in with an elastic wobble
+ *   2. the "Think Leo!" wordmark pops letter by letter
+ *   3. a light shine sweeps across the wordmark
+ *   4. the world cartoon parade marches across the bottom
+ *   5. paw prints fill one by one — the "loading" beat (with tick sounds)
+ *   6. star burst + fanfare → curtain lifts
+ *
+ * Tap anywhere to skip. Plays in full once per session (ThinkLeo root).
+ * Timeline is built with GSAP; the curtain itself stays framer-motion
+ * (ThinkLeo owns the exit). Audio cues ride the timeline via .call().
  */
 
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import gsap from "gsap";
+import { useEffect, useRef, useState } from "react";
 import { Leo } from "@/components/leo/Leo";
 import { StarPop } from "@/components/leo/badges";
 import { Sticker, type StickerId } from "@/components/leo/stickers";
 import { sfx } from "@/lib/sound";
 
 const WORD = "Think Leo!";
-const DRIFTERS: StickerId[] = ["star", "lollipop", "rocket", "fish", "butterfly", "candy"];
+/* the parade: one buddy from every world walks the stage */
+const PARADE: StickerId[] = ["elephant", "monkey", "parrot", "dolphin", "rocket", "cupcake", "butterfly", "candy"];
+const PAWS = 8;
 
 export function Splash({ quick = false, onDone }: { quick?: boolean; onDone: () => void }) {
   const [leaving, setLeaving] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const doneRef = useRef(false);
 
   useEffect(() => {
     if (quick) {
@@ -28,119 +42,188 @@ export function Splash({ quick = false, onDone }: { quick?: boolean; onDone: () 
       const t = window.setTimeout(onDone, 750);
       return () => window.clearTimeout(t);
     }
+
     sfx.unlock(); // polite try — may be blocked before first gesture, that's fine
     sfx.whoosh();
     sfx.roar();
-    const fan = window.setTimeout(() => sfx.fanfare(), 950);
-    const out = window.setTimeout(() => setLeaving(true), 2500);
-    const done = window.setTimeout(onDone, 3150);
+
+    const tl = gsap.timeline({ defaults: { ease: "power2.out" } });
+    const ticks: number[] = [];
+
+    /* 1. the app icon drops in like it leapt off the home screen */
+    tl.fromTo(
+      ".splash-icon",
+      { y: -220, scale: 0.35, opacity: 0, rotate: -18 },
+      { y: 0, scale: 1, opacity: 1, rotate: 0, duration: 0.75, ease: "elastic.out(1, 0.55)" },
+      0.1
+    );
+    /* 2. wordmark letters pop */
+    tl.fromTo(
+      ".splash-letter",
+      { scale: 0, y: 26, opacity: 0 },
+      { scale: 1, y: 0, opacity: 1, duration: 0.45, ease: "back.out(2.2)", stagger: 0.055 },
+      0.55
+    );
+    /* 3. shine sweep across the wordmark */
+    tl.fromTo(
+      ".splash-shine",
+      { xPercent: -140 },
+      { xPercent: 240, duration: 0.6, ease: "power1.inOut" },
+      1.15
+    );
+    /* 4. tagline + parade march in */
+    tl.fromTo(".splash-tag", { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4 }, 1.15);
+    tl.fromTo(
+      ".splash-parader",
+      { x: (i: number) => -window.innerWidth * 0.25 - i * 60 },
+      {
+        x: (i: number) => window.innerWidth * 0.75 + i * 60,
+        duration: 2.6,
+        ease: "none",
+        stagger: 0.12,
+      },
+      1.0
+    );
+    /* bob the paraders while they march */
+    tl.fromTo(
+      ".splash-parader > span",
+      { y: 0 },
+      { y: -8, duration: 0.32, yoyo: true, repeat: 7, ease: "sine.inOut", stagger: 0.12 },
+      1.0
+    );
+    /* 5. paw prints fill — the loading beat, one tick each */
+    for (let p = 0; p < PAWS; p++) {
+      tl.call(() => sfx.tick(p === PAWS - 1), undefined, 1.45 + p * 0.16);
+      tl.fromTo(
+        `.splash-paw-${p}`,
+        { scale: 0, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.22, ease: "back.out(2.4)" },
+        1.45 + p * 0.16
+      );
+    }
+    /* 6. star burst + fanfare, then hand over to the curtain */
+    tl.call(() => sfx.fanfare(), undefined, 2.75);
+    tl.fromTo(
+      ".splash-star",
+      { scale: 0, rotate: -140 },
+      { scale: 1, rotate: 0, duration: 0.45, ease: "back.out(2)" },
+      2.75
+    );
+    ticks.push(
+      window.setTimeout(() => {
+        if (!doneRef.current) {
+          doneRef.current = true;
+          setLeaving(true);
+        }
+      }, 3050)
+    );
+    ticks.push(window.setTimeout(() => onDone(), 3700));
+
     return () => {
-      window.clearTimeout(fan);
-      window.clearTimeout(out);
-      window.clearTimeout(done);
+      tl.kill();
+      ticks.forEach((t) => window.clearTimeout(t));
     };
   }, [quick, onDone]);
 
   return (
     <motion.div
+      ref={rootRef}
       className="leo-bg fixed inset-0 z-[90] flex cursor-pointer flex-col items-center justify-center overflow-hidden"
       initial={{ y: 0 }}
       animate={leaving ? { y: "-102%" } : { y: 0 }}
       transition={leaving ? { duration: 0.62, ease: [0.7, 0, 0.3, 1] } : {}}
-      onClick={() => setLeaving(true)}
+      onClick={() => {
+        if (!doneRef.current) {
+          doneRef.current = true;
+          setLeaving(true);
+          window.setTimeout(onDone, 620);
+        }
+      }}
       role="button"
       aria-label="Think Leo is starting — tap to skip"
     >
-      {/* drifting sticker confetti */}
-      {DRIFTERS.map((id, i) => (
-        <span
-          key={id}
-          className="anim-drift pointer-events-none absolute select-none opacity-60"
-          style={{
-            left: `${8 + i * 15}%`,
-            top: `${12 + ((i * 23) % 70)}%`,
-            animationDelay: `${i * 0.7}s`,
-          }}
+      {/* ── the app icon, alive ── */}
+      <div className="splash-icon relative">
+        <div
+          className="flex h-[124px] w-[124px] items-center justify-center rounded-[30px] border-[4px] border-white shadow-[0_14px_0_rgba(214,178,110,0.35),0_22px_40px_-16px_rgba(140,100,40,0.5)]"
+          style={{ background: "linear-gradient(145deg,#ffd34d 0%,#ffb020 55%,#ff9d2e 100%)" }}
         >
-          <Sticker id={id} size={40} />
+          <Leo mood="excited" size={104} />
+        </div>
+        {/* sheen dot on the icon's corner — reads as "app icon" */}
+        <span className="pointer-events-none absolute left-3 top-2.5 h-6 w-9 rotate-[24deg] rounded-full bg-white/45 blur-[3px]" />
+      </div>
+
+      {/* ── wordmark ── */}
+      <div className="relative mt-4 flex items-baseline overflow-hidden">
+        {WORD.split("").map((ch, i) => (
+          <span key={i} className="splash-letter inline-block font-display text-6xl font-bold text-leo-ink">
+            {ch === " " ? "\u00A0" : ch === "L" ? (
+              <span className="bg-gradient-to-r from-leo-sun via-leo-berry to-leo-grape bg-clip-text text-transparent">
+                Leo!
+              </span>
+            ) : (
+              ch
+            )}
+          </span>
+        ))}
+        <span className="splash-star pointer-events-none absolute -right-10 -top-5">
+          <StarPop size={38} />
         </span>
-      ))}
+        <span className="splash-shine pointer-events-none absolute inset-y-0 -left-8 w-14 rotate-[14deg] bg-white/55 blur-md" />
+      </div>
 
-      {quick ? (
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4 }}>
-          <SplashMark />
-        </motion.div>
-      ) : (
-        <>
-          <motion.div
-            initial={{ y: 260, scale: 0.4, opacity: 0 }}
-            animate={{ y: 0, scale: 1, opacity: 1 }}
-            transition={{ type: "spring", stiffness: 160, damping: 15, delay: 0.15 }}
-          >
-            <Leo mood="excited" size={190} />
-          </motion.div>
+      <p className="splash-tag mt-3 font-display text-base font-medium text-leo-ink-soft">
+        Big brain adventures for little legends
+      </p>
 
-          <div className="relative mt-1 flex items-baseline">
-            {WORD.split("").map((ch, i) => (
-              <motion.span
-                key={i}
-                className="font-display text-6xl font-bold text-leo-ink"
-                initial={{ scale: 0, y: 30, opacity: 0 }}
-                animate={{ scale: 1, y: 0, opacity: 1 }}
-                transition={{ delay: 0.65 + i * 0.07, type: "spring", stiffness: 420, damping: 17 }}
-              >
-                {ch === " " ? "\u00A0" : ch === "L" ? (
-                  <span className="bg-gradient-to-r from-leo-sun via-leo-berry to-leo-grape bg-clip-text text-transparent">Leo!</span>
-                ) : (
-                  ch
-                )}
-              </motion.span>
-            ))}
-            {/* star burst at wordmark landing */}
-            <motion.span
-              className="absolute -right-9 -top-4"
-              initial={{ scale: 0, rotate: -120 }}
-              animate={{ scale: [0, 1.4, 1], rotate: 0 }}
-              transition={{ delay: 1.15, duration: 0.5 }}
-            >
-              <StarPop size={34} />
-            </motion.span>
-          </div>
+      {/* ── paw-print loading bar ── */}
+      <div className="mt-5 flex items-center gap-2" aria-label="Loading">
+        {Array.from({ length: PAWS }, (_, p) => (
+          <Paw key={p} className={`splash-paw-${p}`} />
+        ))}
+      </div>
 
-          <motion.p
-            className="mt-3 font-display text-base font-medium text-leo-ink-soft"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.5 }}
-          >
-            Big brain adventures for little legends
-          </motion.p>
-
-          <motion.div
-            className="absolute bottom-8 flex gap-1.5"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1.8 }}
-          >
-            {[0, 1, 2].map((i) => (
-              <motion.span
-                key={i}
-                className="h-2.5 w-2.5 rounded-full bg-leo-sun"
-                animate={{ y: [0, -6, 0] }}
-                transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
-              />
-            ))}
-          </motion.div>
-        </>
-      )}
+      {/* ── world parade marching across the bottom ── */}
+      <div className="pointer-events-none absolute bottom-9 left-0 right-0 h-14 overflow-hidden" aria-hidden>
+        {PARADE.map((id, i) => (
+          <span key={`${id}-${i}`} className="splash-parader absolute bottom-0" style={{ left: 0 }}>
+            <span className="inline-block">
+              <Sticker id={id} size={44} />
+            </span>
+          </span>
+        ))}
+        <span className="absolute bottom-0 right-6 anim-wiggle">
+          <Leo mood="happy" size={52} />
+        </span>
+      </div>
     </motion.div>
+  );
+}
+
+function Paw({ className = "" }: { className?: string }) {
+  return (
+    <svg width="26" height="20" viewBox="0 0 26 20" className={className}>
+      <g fill="#ffb020">
+        <ellipse cx="13" cy="13" rx="6.4" ry="5.4" />
+        <circle cx="5.6" cy="6.4" r="2.5" />
+        <circle cx="10.6" cy="3.6" r="2.5" />
+        <circle cx="15.6" cy="3.6" r="2.5" />
+        <circle cx="20.6" cy="6.4" r="2.5" />
+      </g>
+    </svg>
   );
 }
 
 function SplashMark() {
   return (
-    <div className="flex items-center gap-3">
-      <Leo mood="happy" size={90} />
+    <div className="flex flex-col items-center gap-2">
+      <div
+        className="flex h-[92px] w-[92px] items-center justify-center rounded-[24px] border-[3.5px] border-white shadow-[0_10px_0_rgba(214,178,110,0.35)]"
+        style={{ background: "linear-gradient(145deg,#ffd34d 0%,#ffb020 55%,#ff9d2e 100%)" }}
+      >
+        <Leo mood="happy" size={76} />
+      </div>
       <div className="font-display text-4xl font-bold">
         <span className="text-leo-ink">Think </span>
         <span className="bg-gradient-to-r from-leo-sun via-leo-berry to-leo-grape bg-clip-text text-transparent">

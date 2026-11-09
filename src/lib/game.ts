@@ -16,6 +16,8 @@ export type Mood =
   | "sad"
   | "thinking"
   | "celebrate"
+  | "wow"
+  | "cheer"
   | "sleep";
 
 export interface World {
@@ -77,8 +79,12 @@ export const TOTAL_LEVELS = WORLDS.length * LEVELS_PER_WORLD; // 40
 export const ROUND_COUNT = 8; // questions per level
 export const RUSH_SECONDS = 12; // "Leo Rush" finale length
 export const MAX_HEARTS = 5;
-export const HEART_REGEN_MS = 15 * 60 * 1000; // one heart every 15 minutes
+export const HEART_REGEN_MS = 8 * 60 * 1000; // one heart every 8 minutes (kids wait badly)
 export const DAILY_GOAL_XP = 120;
+/** Levels 1-2 are learning levels: running out of time never costs a heart. */
+export const GENTLE_LEVELS = 2;
+/** How many finished levels open the gate to the next world (early access). */
+export const WORLD_GATE_DONE = 3;
 export const RUSH_BASE = 60; // points per Rush answer (before ×2)
 export const BASE_POINTS = 100;
 
@@ -215,8 +221,41 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((db - da) / 86400000);
 }
 
-export function isUnlocked(levelIdx: number, stars: Record<number, number>): boolean {
-  return levelIdx <= 1 || (stars[levelIdx - 1] ?? 0) >= 1;
+/**
+ * Unlock rules (v4 — "levels must always end, kids must always move"):
+ *   · levels 1-2 are open from the start;
+ *   · a level opens when the previous one was FINISHED — a star is the
+ *     shiny version, but any completed run (even 0 stars, even practice)
+ *     counts as done;
+ *   · the first level of every world opens after 3 finished levels in the
+ *     previous world, so curious kids can peek into new worlds early.
+ */
+export function isUnlocked(
+  levelIdx: number,
+  stars: Record<number, number>,
+  done: Record<number, boolean> = {}
+): boolean {
+  if (levelIdx <= 2) return true;
+  if ((stars[levelIdx - 1] ?? 0) >= 1 || done[levelIdx - 1]) return true;
+  const world = worldOf(levelIdx).id;
+  if (world > 0 && levelIdx === world * LEVELS_PER_WORLD + 1) {
+    let finished = 0;
+    for (let i = (world - 1) * LEVELS_PER_WORLD + 1; i <= (world - 1) * LEVELS_PER_WORLD + LEVELS_PER_WORLD; i++) {
+      if ((stars[i] ?? 0) >= 1 || done[i]) finished++;
+    }
+    if (finished >= WORLD_GATE_DONE) return true;
+  }
+  return false;
+}
+
+/** How many distinct levels a kid has finished (stars or done). */
+export function finishedCount(
+  stars: Record<number, number>,
+  done: Record<number, boolean>
+): number {
+  let n = 0;
+  for (let i = 1; i <= TOTAL_LEVELS; i++) if ((stars[i] ?? 0) >= 1 || done[i]) n++;
+  return n;
 }
 
 /** A world chest waits after every 10th level. */
@@ -224,7 +263,9 @@ export function chestAfterLevel(levelIdx: number): boolean {
   return levelIdx % LEVELS_PER_WORLD === 0;
 }
 
-export const CHEST_REWARDS = { refills: 2, xp: 40 } as const;
+export const CHEST_REWARDS = { refills: 3, xp: 40 } as const;
+/** Leo's courage boost — one free full-heart refill per local day. */
+export const BOOST_XP = 10;
 
 /* ════════════════════════════════════════════════════════════════
    DAILY QUESTS — the "why do I open it today" engine (§13.1)

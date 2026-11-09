@@ -115,15 +115,33 @@ kid-safe form.
 ## 3. Worlds, levels & the map
 
 - **4 worlds × 10 levels = 40 levels** (`WORLDS`, `LEVELS_PER_WORLD`):
-  🌴 Jungle Jam → 🌊 Coral Cove → 🚀 Space Hop → 🍭 Candy Peak.
-- **Unlock rule:** level *i* unlocks when level *i−1* has ≥ 1 star.
-  `isUnlocked(i, stars) = i === 1 || stars[i-1] >= 1`.
+  Jungle Jam → Coral Cove → Space Hop → Candy Peak.
+- **Unlock rule (v4 — “levels must always end”):** level *i* unlocks when
+  level *i−1* was **finished** — a star is the shiny version, but ANY
+  completed run (even 0 stars, even practice) sets the `done[i−1]` flag and
+  opens the door:
+
+  ```
+  isUnlocked(i, stars, done) =
+      i ≤ 2                                            // gentle start
+   || stars[i−1] ≥ 1 || done[i−1]                      // finish → next opens
+   || (i is a world's first level
+       && finishedLevels(previousWorld) ≥ 3)           // early world access
+  ```
+
+  The world gate lets curious kids peek into the next world after finishing
+  **3** levels of the current one (`WORLD_GATE_DONE`), instead of grinding
+  all 10. Finished = star or done (`finishedCount`).
 - **Map geometry** (`LevelMap.tsx`): nodes sit on a sine trail
   `x(i) = centerX + sin(i × 1.05) × 165`, `y(i) = H − pad − (i−1) × 96`,
   rendered bottom-up (level 1 at the bottom, like Candy Crush). A dotted
   polyline threads the nodes; the current quest pulses and Leo stands on it.
+  A node a kid finished without stars shows a check mark — effort is visible.
+- **Level transitions:** every jump into a level plays a world-coloured
+  circular wipe with Leo running across (`LevelWipe` in `ThinkLeo.tsx`) —
+  travel is part of the game, not a route change.
 - **World chests** wait after levels 10/20/30/40: first 1-star clear claims
-  **+2 heart-refill tickets + 40 XP** (once each; `grantChest`).
+  **+3 heart-refill tickets + 40 XP** (once each; `grantChest`).
 
 ---
 
@@ -146,18 +164,29 @@ pool, with two hard rules: **no immediate repeats** and **at most one Memory
 puzzle per level**. Levels 1–2 always open with a Count puzzle (gentle
 onboarding).
 
-### 4.3 The 8 mini-games
+### 4.3 The 12 mini-games
+
+Eight thinking classics plus four hands-on games (v4) — the hands-on games
+exist because young kids want to **do** things, not only compute:
 
 | Kind | Skill | Difficulty scaling (diff 1→6) |
 | --- | --- | --- |
-| 🔢 Count | cardinality | 3 → 16 items, tighter near-miss options (±1 → ±3) |
-| ➕ Maths | add/subtract | 1-digit → 2-digit → 3-term `a + b − c` |
-| ⚖️ Compare | magnitude | emoji plates → numbers up to 999; bigger *or* smaller |
-| 🔍 Odd one | categorization | unrelated intruder → *look-alike category* intruder (fruit vs veggie) |
-| 🧩 Sequence | pattern rules | +1 hop → doubles → triples → zigzag (+u,−d) → Fibonacci-style |
-| ✖️ Tables | multiplication | ×2–3 → full ×12, distractors = ±one group (`a(b±1)`, `ab±a`) |
-| 🎯 True/Trap | verification | sums ≤ 10 → ±50 with sneaky ±5 lies |
-| 🎵 Memory | working memory | Simon-style: 3 → 6 pads, each pad has its own note |
+| Count | cardinality | 3 → 16 items, tighter near-miss options (±1 → ±3) |
+| Maths | add/subtract | 1-digit → 2-digit → 3-term `a + b − c` |
+| Compare | magnitude | sticker plates → numbers up to 999; bigger *or* smaller |
+| Odd one | categorization | unrelated intruder → *look-alike category* intruder (fruit vs veggie) |
+| Sequence | pattern rules | +1 hop → doubles → triples → zigzag (+u,−d) → Fibonacci-style |
+| Tables | multiplication | ×2–3 → full ×12, distractors = ±one group (`a(b±1)`, `ab±a`) |
+| True/Trap | verification | sums ≤ 10 → ±50 with sneaky ±5 lies |
+| Memory | working memory | Simon-style: 3 → 6 pads, each pad has its own note |
+| **Tap it!** (v4) | scanning + reaction | “Tap all the monkeys!” — 9 → 16-tile mixed crowd, 3–6 targets; wrong taps only *boing*, all-found ends the puzzle with a rising scale (`found(n)`) |
+| **Shadow** (v4) | visual discrimination | match the animal to its silhouette; decoys come from the same world + a woodland cast (frog, fox, owl joined the sticker catalog) |
+| **Pattern** (v4) | pre-math logic | colour+shape tokens: AB → AAB/ABB → ABC → AABB pairs; decoys share shape *or* colour, never both |
+| **Feed Leo** (v4) | counting you can feel | drop snacks into Leo's bowl one tap at a time (munch SFX), take extras back, tap DONE when the count matches; bowl holds want+4 so overshoots are fixable |
+
+Judge-yourself games (Memory, Tap it!, Feed Leo) return `answer: −1` and
+resolve through an internal `onResult(ok)` — the reveal shows Leo's reaction,
+not a highlighted option.
 
 ### 4.4 Distractors
 
@@ -243,16 +272,26 @@ dailyGoal   = 120 XP                        // ≈ 3–4 level runs
 Achievement bounties (§13.2) pay 40–200 XP each, so early levels and the
 first badges land inside the first session — dopamine up front, grind after.
 
-### 6.2 Hearts (scarcity, softened)
+### 6.2 Hearts (scarcity, softened twice)
 
 ```
-max = 5 · regen = 1 heart / 15 min · tokens from chests = instant full refill
+max = 5 · regen = 1 heart / 8 min · tokens from chests = instant full refill
+Leo's courage boost = 1 free full refill per local day (boostDay)
+learning mercy     = levels 1–2: timeouts cost NO heart (slow readers ≠ wrong)
+practice mode      = hearts frozen entirely, run always ends, XP halved
 ```
 
 Regen is computed from timestamps, not tick counts: `tickHearts()` pours in
-`⌊(now − heartsAt) / 15min⌋` hearts whenever the app is open, and the stamp
+`⌊(now − heartsAt) / 8min⌋` hearts whenever the app is open, and the stamp
 advances by exactly the poured amount, so offline time counts too. Losing a
 heart starts the clock only if the tank was full.
+
+**Why the changes:** the #1 kid complaint was “level 1 never ends”. The
+chain was: slow reader → timeout → heart lost → 0 hearts → hard stop for
+15+ minutes → kid (and parent) give up. v4 removes every hard stop: the
+daily boost, the practice mode (`Keep playing` on the out-of-hearts screen)
+and the 8-minute regen guarantee that a play session can always continue,
+and every finished run still opens the next level (§3).
 
 ### 6.3 Streaks (loss-aversion, softened)
 
@@ -279,16 +318,18 @@ committed week. No real-player leaderboards — the opponent is yourself.
 
 ## 7. Persistence schema
 
-`localStorage["think-leo-save-v1"]` via zustand `persist` (offline-first PWA;
+`localStorage["think-leo-save-v1"]` via zustand `persist` (offline-first;
 no server, no accounts, nothing leaves the device):
 
 ```jsonc
 {
   "xp": 1240, "weekXp": 420, "leagueWeek": "2026-W45",
-  "hearts": 4, "heartsAt": 1731150000000, "refills": 2,
-  "streak": 5, "bestStreak": 5, "lastPlayDay": "2026-11-08", "freezes": 1,
-  "todayXp": 80, "today": "2026-11-08",
+  "hearts": 4, "heartsAt": 1731150000000, "refills": 3,
+  "streak": 5, "bestStreak": 5, "lastPlayDay": "2026-11-09", "freezes": 1,
+  "todayXp": 80, "today": "2026-11-09",
   "stars": { "1": 3, "2": 2 }, "best": { "1": 2310 },
+  "done":  { "1": true, "2": true },          // v4: any finished run unlocks the next level
+  "boostDay": "",                             // v4: Leo's daily courage boost
   "chests": { "0": true },
   "soundSfx": true, "soundMusic": true,
   "totalCorrect": 0, "runs": 7
@@ -322,6 +363,10 @@ ticks and sparkle.
 | `whoosh` | bandpass noise sweep 300→2400 Hz | ignition |
 | `flame` | noise crackle + rising tone | streak fire |
 | `pad(i)` | C4/E4/G4/C5 triangle | memory melody |
+| `found(n)` | rising pluck + air, pitch = hit count | tap-the-target sweep |
+| `munch` | two filtered noise crunches + lip pop | feed-Leo snacking |
+| `boing` | triangle 300→110 Hz glide | wrong tap in hands-on games (funny, never scary) |
+| `wipe` | falling noise sweep + thud | level-transition curtain |
 
 ### 8.3 The combo escalation family (Duolingo principle)
 
@@ -412,11 +457,13 @@ blink (scaleY squash every ~4 s); paws animate independently when raised.
 | Mood | Eyes | Mouth | Body | Trigger |
 | --- | --- | --- | --- | --- |
 | `idle` | open + blink | smile | float | resting / between questions |
-| `happy` | open | open smile | bounce | correct answer |
+| `happy` | open | open smile | bounce | correct answer, full bowl |
 | `excited` | wide | open | bounce fast | combos ≥ 5, Rush, intro |
 | `sad` | downturned pupils, brows | frown | slow droop | miss / timeout / out of hearts |
-| `thinking` | pupils up-right, one brow | flat | still, paw on chin | hints, splash |
-| `celebrate` | **star eyes** | open | dance + sparkles | level clear |
+| `thinking` | pupils up-right, one brow | flat | still, paw on chin | hints, feed-Leo counting |
+| `celebrate` | **star eyes** | open | dance + sparkles | level clear (1–2 stars) |
+| `wow` | wide | **ooh** (round) | pop-jump + wobble | LEO RUSH ignition |
+| `cheer` | **star eyes** | open | victory jumps with hip twist | 3-star runs |
 | `sleep` | closed | flat | slow breathe + zzz | before 6 AM |
 
 Leo speaks through a spring-loaded speech bubble: praise on streaks, the
@@ -425,30 +472,41 @@ on home, and soft no-heart encouragement.
 
 ---
 
-## 11. Startup animation
+## 11. Startup animation (the "app icon came alive" moment)
 
-First visit per session (2.6 s): whoosh → Leo springs in (stiffness 160,
-damping 15) → wordmark pops letter-by-letter (70 ms stagger) → fanfare +
-star-burst → curtain lifts. Repeat visits in the same session get a 0.75 s
-logo fade. Any tap skips. The splash doubles as the hydration cover, so the
-app never flashes unhydrated state.
+This is the page a kid sees in the second after tapping the Think Leo icon
+on a phone's home screen, so it opens with **the app icon itself**: a
+squircle icon card drops in with an elastic wobble, the "Think Leo!"
+wordmark pops letter by letter, a shine sweeps across, the world cartoon
+parade (elephant → monkey → parrot → dolphin → rocket → cupcake → butterfly →
+candy) marches across the bottom while Leo bobs at the corner, then **paw
+prints fill one by one** as the loading beat (each with a tick) and a star
+burst + fanfare hands over to the curtain lift. Full choreography is a GSAP
+timeline (~3.7 s); any tap skips. Repeat visits in the same session get a
+0.75 s logo card. The splash doubles as the hydration cover, so the app
+never flashes unhydrated state.
 
 ---
 
-## 12. PWA shape
+## 12. The app on a phone (installable, offline, no jargon)
+
+Parents never see the letters "PWA" — the app simply **installs and works**:
 
 - `manifest.webmanifest`: standalone (+ `display_override`,
-  `launch_handler: navigate-existing`), theme `#FFB020`, maskable + any icons.
+  `launch_handler: navigate-existing`), theme `#FFB020`, maskable + any
+  icons — so "Add to Home Screen" gives a real app icon and a real
+  full-screen app on phones and tablets.
 - `public/sw.js` **v3**: precaches the shell, icons and the three music
   tracks; cache-first for `/_next/static`, icons and `/audio/*`; network-first
   for navigations with cached-shell fallback → **the game fully boots and
-  sounds right offline**. `SKIP_WAITING` + `clients.claim()` plus a
+  sounds right with no internet**. `SKIP_WAITING` + `clients.claim()` plus a
   controller-change reload keep installed apps auto-updated.
-- Registration happens at the root layout — the service worker installs on
-  first load of any device, so the installed app on laptops, phones and
-  tablets is a real PWA.
-- Install prompt captured via `beforeinstallprompt` and surfaced as a chunky
-  button on Home.
+- Registration happens at the root layout, so the installed app updates
+  itself on any device.
+- `viewport-fit: cover` + `env(safe-area-inset-bottom)` padding keep the HUD
+  clear of notches and home-indicator bars.
+- Install prompt captured via `beforeinstallprompt` and surfaced on Home as
+  **“Add to Home Screen”** — grown-up language, zero jargon.
 
 ---
 
@@ -468,8 +526,24 @@ Three invariants were learned the hard way and are covered by
    owns streak / playDays / lastPlayDay — first-ever play starts the streak
    at 1, milestones mint freezes.
 
-Migration: v2 saves (inflated XP era) are rescaled ÷12 on load, boards are
-rebuilt, stars/best survive.
+Migration: v2 saves (inflated XP era) are rescaled ÷12 on load (guarded by
+the persisted `version`, so v3+ XP is never touched twice), boards are
+rebuilt, stars/best survive. **v4** backfills `done` from stars (old saves
+keep every unlocked door) and adds `boostDay`.
+
+### 12.2 v4 regression proof
+
+`bun scripts/sim-v4.ts` verifies, without a browser:
+
+1. all 40 level plans build; every one of the 12 mini-games generates a
+   valid, answerable question at every difficulty 1–6;
+2. unlock rules: levels 1–2 open, `done[i−1]` opens level *i* even at 0
+   stars, the 3-level world gate opens new worlds early;
+3. a **0-star practice finish unlocks level 2** — the “level 1 never ends”
+   bug is structurally impossible now.
+
+The older `scripts/store-test.ts` (quest-board contract, achievement XP,
+heart math) still passes unchanged.
 
 ---
 

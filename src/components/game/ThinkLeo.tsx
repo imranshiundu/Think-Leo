@@ -21,11 +21,13 @@ import { Splash } from "@/components/game/Splash";
 import { AchievementToasts } from "@/components/game/bits";
 import { detectDevice, watchDevice, type DeviceKind } from "@/lib/device";
 import { recordDevice } from "@/lib/deviceInfo";
-import { LEVELS_PER_WORLD, WORLDS } from "@/lib/game";
+import { LEVELS_PER_WORLD, WORLDS, worldOf } from "@/lib/game";
 import { sfx } from "@/lib/sound";
 import { useLeo } from "@/lib/store";
+import { Sticker } from "@/components/leo/stickers";
+import { Leo } from "@/components/leo/Leo";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type View = "home" | "map" | "play";
 
@@ -88,6 +90,21 @@ export default function ThinkLeo() {
     if (splashDone) sessionStorage.setItem("tl-seen", "1");
   }, [splashDone]);
 
+  /* ── level-transition wipe: every jump into a level is a moment ── */
+  const [wipe, setWipe] = useState<number | null>(null);
+  const goLevel = useCallback((i: number) => {
+    setWipe((cur) => {
+      if (cur !== null) return cur; // a wipe is already running
+      sfx.wipe();
+      window.setTimeout(() => {
+        setLevelIdx(i);
+        setView("play");
+      }, 560);
+      window.setTimeout(() => setWipe(null), 1250);
+      return i;
+    });
+  }, []);
+
   /* next unmastered level */
   const currentLevel = useMemo(() => {
     for (let i = 1; i <= WORLDS.length * LEVELS_PER_WORLD; i++) {
@@ -112,6 +129,8 @@ export default function ThinkLeo() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>{wipe !== null && <LevelWipe key="wipe" level={wipe} />}</AnimatePresence>
+
       <motion.div
         key={view}
         initial={{ opacity: 0 }}
@@ -122,8 +141,7 @@ export default function ThinkLeo() {
           <Home
             onPlay={() => {
               sfx.click();
-              setLevelIdx(currentLevel);
-              setView("play");
+              goLevel(currentLevel);
             }}
             onMap={(w) => {
               sfx.click();
@@ -137,10 +155,7 @@ export default function ThinkLeo() {
           <LevelMap
             startWorld={focusWorld}
             onBack={() => setView("home")}
-            onPlay={(i) => {
-              setLevelIdx(i);
-              setView("play");
-            }}
+            onPlay={(i) => goLevel(i)}
           />
         )}
 
@@ -151,12 +166,52 @@ export default function ThinkLeo() {
             hasNext={levelIdx < WORLDS.length * LEVELS_PER_WORLD}
             onExit={() => setView("map")}
             onNext={() => {
-              setLevelIdx((l) => Math.min(WORLDS.length * LEVELS_PER_WORLD, l + 1));
-              setView("play");
+              goLevel(Math.min(WORLDS.length * LEVELS_PER_WORLD, levelIdx + 1));
             }}
           />
         )}
       </motion.div>
     </>
+  );
+}
+
+/* ── the curtain between screens: a world-coloured burst with Leo running
+      across it — the "travelling to the next quest" beat ── */
+function LevelWipe({ level }: { level: number }) {
+  const world = worldOf(level);
+  return (
+    <motion.div
+      className="pointer-events-none fixed inset-0 z-[85] flex items-center justify-center"
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.45, ease: "easeOut" } }}
+    >
+      <motion.div
+        className="absolute inset-0"
+        style={{ background: `linear-gradient(135deg, ${world.node}, ${world.edge})` }}
+        initial={{ clipPath: "circle(0% at 50% 46%)" }}
+        animate={{ clipPath: "circle(78% at 50% 46%)" }}
+        transition={{ duration: 0.52, ease: [0.7, 0, 0.3, 1] }}
+      />
+      <motion.div
+        className="relative flex flex-col items-center"
+        initial={{ scale: 0.6, opacity: 0, y: 24 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ delay: 0.18, type: "spring", stiffness: 260, damping: 18 }}
+      >
+        <div className="flex items-center gap-3 rounded-3xl border-[4px] border-white/90 bg-white/25 px-7 py-4 backdrop-blur-sm">
+          <div className="anim-bob-x">
+            <Leo mood="excited" size={86} />
+          </div>
+          <div className="text-left">
+            <div className="flex items-center gap-2 font-display text-sm font-bold uppercase tracking-widest text-white/90">
+              <Sticker id={world.emblem} size={20} />
+              {world.name}
+            </div>
+            <div className="font-display text-4xl font-bold text-white text-outline-sm">Level {level}</div>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }

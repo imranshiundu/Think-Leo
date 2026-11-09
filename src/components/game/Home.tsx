@@ -28,6 +28,8 @@ import {
   ACH_DEFINITIONS,
   LEVELS_PER_WORLD,
   WORLDS,
+  finishedCount,
+  isUnlocked,
   leagueOf,
   leoGreeting,
   playerLevelFromXp,
@@ -86,7 +88,7 @@ export function Home({
   const lvl = playerLevelFromXp(save.xp);
   const league = leagueOf(save.weekXp);
   const totalStars = Object.values(save.stars).reduce((a, b) => a + b, 0);
-  const levelsDone = Object.values(save.stars).filter((s) => s > 0).length;
+  const levelsDone = finishedCount(save.stars, save.done);
 
   const currentLevel = useMemo(() => {
     for (let i = 1; i <= WORLDS.length * LEVELS_PER_WORLD; i++) {
@@ -125,7 +127,7 @@ export function Home({
 
   return (
     <div className="leo-bg h-screen w-full overflow-y-auto leo-scroll">
-      <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pb-5 pt-4 md:px-8">
+      <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 md:px-8">
         {/* ── top bar ── */}
         <header className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">
@@ -326,7 +328,7 @@ export function Home({
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {WORLDS.map((w, idx) => {
               const firstLevel = idx * LEVELS_PER_WORLD + 1;
-              const locked = firstLevel > 1 && (save.stars[firstLevel - 1] ?? 0) < 1;
+              const locked = !isUnlocked(firstLevel, save.stars, save.done);
               const stars = worldStars(idx);
               return (
                 <motion.button
@@ -353,7 +355,9 @@ export function Home({
                   )}
                   <span className="mt-1 font-display text-base font-bold text-leo-ink">{w.name}</span>
                   <span className="mt-0.5 line-clamp-2 min-h-8 text-[11px] leading-snug text-leo-ink-soft">
-                    {locked ? "Earn a star on the previous world to unlock" : w.tagline}
+                    {locked
+                      ? `Finish 3 levels in ${WORLDS[idx - 1]?.name ?? "the previous world"} to open`
+                      : w.tagline}
                   </span>
                   <div className="mt-2">
                     <StarRow n={Math.round((stars / (LEVELS_PER_WORLD * 3)) * 3)} size={15} />
@@ -377,15 +381,15 @@ export function Home({
           <StreakStrip playDays={save.playDays} streak={save.streak} />
         </section>
 
-        {/* ── parents / install ── */}
+        {/* ── grown-ups / add to home screen ── */}
         <footer className="mt-auto pt-5">
           <div className="leo-card flex flex-wrap items-center justify-between gap-3 p-4">
             <div className="flex items-start gap-2 text-xs leading-relaxed text-leo-ink-soft">
               <Sparkles width={18} height={18} className="mt-0.5 shrink-0 text-leo-ink" />
               <span>
                 <b className="font-display text-sm text-leo-ink">For grown-ups:</b> kid-safe by design —
-                no ads, no purchases, no chat. Progress saves on this device and works offline —
-                on laptops, phones and tablets.
+                no ads, no purchases, no chat. Progress saves on this device and keeps working with no
+                internet. Made for phones and tablets — laptops love it too.
                 <span className="mt-0.5 block text-[10px] opacity-75">
                   Music: &ldquo;Carefree&rdquo;, &ldquo;Monkeys Spinning Monkeys&rdquo;, &ldquo;Sneaky Snitch&rdquo; by Kevin MacLeod
                   (incompetech.com) — licensed under CC BY 4.0.
@@ -400,10 +404,10 @@ export function Home({
                   void installEvt.prompt();
                   setInstallEvt(null);
                 }}
-                ariaLabel="Install Think Leo on this device"
+                ariaLabel="Add Think Leo to your home screen"
               >
                 <span className="inline-flex items-center gap-1.5">
-                  <Download width={15} height={15} /> Install app
+                  <Download width={15} height={15} /> Add to Home Screen
                 </span>
               </ChunkyButton>
             )}

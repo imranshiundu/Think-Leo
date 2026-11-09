@@ -32,6 +32,8 @@ export type StickerId =
   | "carrot" | "broccoli" | "corn" | "chili"
   // pets
   | "dog" | "cat" | "rabbit" | "mouse"
+  // woodland (v4 — shadow-match cast)
+  | "frog" | "fox" | "owl"
   // farm
   | "cow" | "pig" | "chicken" | "sheep"
   // bugs
@@ -551,6 +553,62 @@ const Snail = () => (
   </g>
 );
 
+/* ── woodland (v4) ─────────────────────────────────────────── */
+
+const Frog = () => (
+  <g {...STROKE}>
+    <circle cx="13" cy="15" r="6" fill="#7ED957" />
+    <circle cx="35" cy="15" r="6" fill="#7ED957" />
+    <circle cx="13" cy="15" r="2.4" fill={OUT} stroke="none" />
+    <circle cx="35" cy="15" r="2.4" fill={OUT} stroke="none" />
+    <circle cx="13" cy="14" r="0.9" fill="#fff" stroke="none" />
+    <circle cx="35" cy="14" r="0.9" fill="#fff" stroke="none" />
+    <ellipse cx="24" cy="26" rx="14" ry="11.5" fill="#7ED957" />
+    <path d="M18,30 q6,5 12,0" fill="none" strokeWidth={1.8} />
+    <circle cx="20.5" cy="29.4" r="1" fill={OUT} stroke="none" />
+    <circle cx="27.5" cy="29.4" r="1" fill={OUT} stroke="none" />
+    <ellipse cx="24" cy="23.5" rx="6.5" ry="3.4" fill="#D9F7C5" strokeWidth={1.4} />
+    <circle cx="21.6" cy="23.5" r="1.1" fill={OUT} stroke="none" />
+    <circle cx="26.4" cy="23.5" r="1.1" fill={OUT} stroke="none" />
+    <path d="M12,35 q-4,3 -6,1 M36,35 q4,3 6,1" fill="none" strokeWidth={2.2} />
+  </g>
+);
+
+const Fox = () => (
+  <g {...STROKE}>
+    <path d="M11,17 L8,6 L19,11 Z" fill="#FF9D5C" />
+    <path d="M37,17 L40,6 L29,11 Z" fill="#FF9D5C" />
+    <path d="M11.6,15.4 L10,9 L16.5,12 Z" fill="#FFE9C7" strokeWidth={1.2} />
+    <path d="M36.4,15.4 L38,9 L31.5,12 Z" fill="#FFE9C7" strokeWidth={1.2} />
+    <ellipse cx="24" cy="26" rx="15" ry="12" fill="#FF9D5C" />
+    <path d="M13.5,20 Q24,15 34.5,20 L30,34 Q24,37 18,34 Z" fill="#FFE9C7" strokeWidth={1.4} />
+    <circle cx="18.5" cy="23.5" r="1.6" fill={OUT} stroke="none" />
+    <circle cx="29.5" cy="23.5" r="1.6" fill={OUT} stroke="none" />
+    <circle cx="19.3" cy="22.9" r="0.55" fill="#fff" stroke="none" />
+    <circle cx="30.3" cy="22.9" r="0.55" fill="#fff" stroke="none" />
+    <ellipse cx="24" cy="30" rx="2.6" ry="1.9" fill="#4A2F1B" stroke="none" />
+    <path d="M22.6,32.6 q1.4,1.3 2.8,0" fill="none" strokeWidth={1.4} />
+  </g>
+);
+
+const Owl = () => (
+  <g {...STROKE}>
+    <path d="M10,14 L15,4 L20,11 Z" fill="#9B7653" />
+    <path d="M38,14 L33,4 L28,11 Z" fill="#9B7653" />
+    <ellipse cx="24" cy="25" rx="15.5" ry="15" fill="#9B7653" />
+    <ellipse cx="24" cy="29" rx="10.5" ry="10" fill="#F2D3AC" strokeWidth={1.4} />
+    <circle cx="18" cy="19" r="5.6" fill="#fff" />
+    <circle cx="30" cy="19" r="5.6" fill="#fff" />
+    <circle cx="18" cy="19.6" r="2.6" fill={OUT} stroke="none" />
+    <circle cx="30" cy="19.6" r="2.6" fill={OUT} stroke="none" />
+    <circle cx="18.9" cy="18.7" r="0.9" fill="#fff" stroke="none" />
+    <circle cx="30.9" cy="18.7" r="0.9" fill="#fff" stroke="none" />
+    <path d="M24,22.5 L21.8,26.5 L26.2,26.5 Z" fill="#FFB020" />
+    <path d="M20,33 q2,-2 4,0 q2,-2 4,0" fill="none" strokeWidth={1.4} />
+    <path d="M14,31 q-1.5,4 1,6 M34,31 q1.5,4 -1,6" fill="none" strokeWidth={2} />
+  </g>
+);
+
 /* ── road ───────────────────────────────────────────────────── */
 
 const Car = () => (
@@ -598,6 +656,7 @@ const CATALOG: Record<StickerId, () => React.ReactElement> = {
   apple: Apple, banana: Banana, grapes: Grapes, strawberry: Strawberry,
   carrot: Carrot, broccoli: Broccoli, corn: Corn, chili: Chili,
   dog: Dog, cat: Cat, rabbit: Rabbit, mouse: Mouse,
+  frog: Frog, fox: Fox, owl: Owl,
   cow: Cow, pig: Pig, chicken: Chicken, sheep: Sheep,
   bee: Bee, ladybug: Ladybug, snail: Snail,
   car: Car, bus: Bus, tractor: Tractor,

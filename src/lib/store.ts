@@ -1,7 +1,7 @@
 /**
- * Think Leo — Save State v3 (zustand + localStorage)
+ * Think Leo — Save State v4 (zustand + localStorage)
  * ─────────────────────────────────────────────────
- * Offline-first PWA: the whole save lives on the kid's device.
+ * Offline-first: the whole save lives on the kid's device.
  * Schema + hearts-regen, streak, quest and achievement math are
  * documented in docs/ALGORITHM.md §6–7 and §13.
  *
@@ -13,6 +13,13 @@
  *    distinct events) — a mismatch only happens on a genuine day rollover.
  *  · Any XP grant or finished run counts as "played today": the streak,
  *    playDays strip and daily ring can never disagree with each other.
+ *
+ * V4 — "levels must always end":
+ *  · `done[levelIdx]` records ANY finished run (0 stars or practice too),
+ *    so finishing a level always opens the next one;
+ *  · `boostDay` powers Leo's courage boost (one free full refill per day),
+ *    so a kid with 0 hearts is never stuck waiting;
+ *  · heart regen is 8 min (was 15) — kids wait badly.
  */
 
 import { create } from "zustand";
@@ -20,6 +27,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { useEffect } from "react";
 import {
   ACH_DEFINITIONS,
+  BOOST_XP,
   CHEST_REWARDS,
   QUEST_ALL_DONE_BONUS,
   dayKey,
@@ -49,9 +57,11 @@ export interface LeoSave {
   today: string;
   stars: Record<number, number>; // levelIdx -> best stars
   best: Record<number, number>; // levelIdx -> best score
+  done: Record<number, boolean>; // levelIdx -> finished at least once (any result)
   chests: Record<number, boolean>; // worldId -> claimed
   soundSfx: boolean;
   soundMusic: boolean;
+  boostDay: string; // day Leo's courage boost (free full refill) was used
   totalCorrect: number;
   runs: number;
   /* retention systems */
@@ -78,6 +88,9 @@ export interface LeoActions {
   trackRush: (hits: number) => void;
   recordLevel: (levelIdx: number, stars: number, score: number) => void;
   grantChest: (worldId: number) => void;
+  /** Leo's courage boost: one free full refill per local day. */
+  claimBoost: () => boolean;
+  boostReady: () => boolean;
   claimQuest: (i: number) => boolean;
   claimQuestBonus: () => boolean;
   claimComeback: () => boolean;
@@ -106,9 +119,11 @@ const DEFAULT_SAVE: LeoSave = {
   today: dayKey(),
   stars: {},
   best: {},
+  done: {},
   chests: {},
   soundSfx: true,
   soundMusic: true,
+  boostDay: "",
   totalCorrect: 0,
   runs: 0,
   playDays: [],
@@ -366,7 +381,8 @@ export const useLeo = create<LeoStore>()(
       },
 
       /**
-       * Records a finished level: best stars, best score, run counter,
+       * Records a finished level — ANY finished run (v4): best stars, best
+       * score, `done` flag (so the next level always opens), run counter,
        * first-clear quest bumps — then achievement checks. ONE set, built
        * from a single snapshot; nothing can be wiped mid-way any more.
        */
@@ -380,6 +396,7 @@ export const useLeo = create<LeoStore>()(
           ...s0,
           stars: { ...s0.stars, [levelIdx]: Math.max(prevStars, stars) },
           best: { ...s0.best, [levelIdx]: Math.max(prevBest, score) },
+          done: { ...s0.done, [levelIdx]: true },
           runs: s0.runs + 1,
         };
         if (firstClear) {
@@ -392,6 +409,25 @@ export const useLeo = create<LeoStore>()(
         if (unlocked.length) {
           set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
         }
+      },
+
+      claimBoost: () => {
+        const s = get();
+        const today = dayKey();
+        if (s.boostDay === today || s.hearts >= MAX_HEARTS) return false;
+        set({
+          ...s,
+          boostDay: today,
+          hearts: MAX_HEARTS,
+          heartsAt: Date.now(),
+        });
+        get().addXp(BOOST_XP);
+        return true;
+      },
+
+      boostReady: () => {
+        const s = get();
+        return s.boostDay !== dayKey() && s.hearts < MAX_HEARTS;
       },
 
       grantChest: (worldId) => {
@@ -453,7 +489,7 @@ export const useLeo = create<LeoStore>()(
     }),
     {
       name: "think-leo-save-v1",
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => {
         const { _hydrated, pendingAch, levelUpPulse, ...rest } = s;
@@ -462,14 +498,20 @@ export const useLeo = create<LeoStore>()(
         void levelUpPulse;
         return rest as LeoStore;
       },
-      migrate: (persisted) => {
+      migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Partial<LeoSave>;
         // v2 saves carry XP from the inflated economy (score/12 per run — one
         // run could mint 700+ XP and skip three leagues). Rescale to the v3
         // curve so returning kids land in a sane state without losing progress.
-        const scale = p.leagueWeek ? 12 : 1; // only v2-era saves need it
+        // (v3+ saves were already rescaled — never touch their XP again.)
+        const scale = version < 3 ? 12 : 1;
         const xp = Math.round((p.xp ?? 0) / scale);
         const weekXp = Math.round((p.weekXp ?? 0) / scale);
+        // v4: backfill `done` from stars so old saves keep every unlocked door
+        const done: Record<number, boolean> = {};
+        Object.entries(p.stars ?? {}).forEach(([k, v]) => {
+          if (v > 0) done[Number(k)] = true;
+        });
         return {
           ...DEFAULT_SAVE,
           ...p,
@@ -483,6 +525,8 @@ export const useLeo = create<LeoStore>()(
           ach: p.ach ?? [],
           seenPlayerLevel: playerLevelFromXp(xp),
           comebackDay: "",
+          done: { ...done, ...(p.done ?? {}) },
+          boostDay: p.boostDay ?? "",
         };
       },
       onRehydrateStorage: () => (state) => {

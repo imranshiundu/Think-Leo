@@ -19,11 +19,13 @@ import {
   Heart,
   Map,
   Medal,
+  Moon,
   Music,
   Plus,
   Rocket,
   Scale,
   Search,
+  Shapes,
   Sparkles,
   Star,
   Target,
@@ -451,6 +453,10 @@ const KIND_ICONS = {
   multiply: X,
   truefalse: Target,
   memory: Music,
+  tapTarget: Hand,
+  shadow: Moon,
+  pattern: Shapes,
+  feedLeo: Heart,
 } as const;
 
 function PuzzleIcon(props: React.SVGProps<SVGSVGElement>) {

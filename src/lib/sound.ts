@@ -583,6 +583,41 @@ class LeoSound {
     this.noise({ dur: 0.04, vol: 0.04, f0: 900, q: 2 });
   }
 
+  /* ── v4 hands-on game voices ─────────────────────────────────── */
+
+  /**
+   * Found one! (tap-the-target) — pitch climbs with every hit so a
+   * full sweep plays a rising scale, Candy-Crush style.
+   */
+  found(n: number) {
+    if (!this.guard()) return;
+    const step = Math.min(n, 10);
+    this.pluck(NOTE(step, 659.26), this.t0, 0.12, -0.15);
+    this.noise({ at: this.t0 + 0.02, dur: 0.1, vol: 0.02, f0: 6200, type: "highpass", wet: 0.3 });
+  }
+
+  /** Leo munching a snack (feed-Leo) — two soft crunches + happy lip. */
+  munch() {
+    if (!this.guard()) return;
+    const t = this.t0;
+    this.noise({ at: t, dur: 0.07, vol: 0.09, f0: 900, f1: 300, q: 1.2 });
+    this.noise({ at: t + 0.11, dur: 0.06, vol: 0.07, f0: 700, f1: 260, q: 1.2 });
+    this.tone(520, { at: t + 0.2, dur: 0.09, type: "sine", vol: 0.05, glide: 700 });
+  }
+
+  /** Boing — wrong tap inside a hands-on game (funny, never scary). */
+  boing() {
+    if (!this.guard()) return;
+    this.tone(300, { dur: 0.24, type: "triangle", vol: 0.1, glide: 110, filter: 1400 });
+  }
+
+  /** Curtain/wipe whoosh with a soft landing — level transitions. */
+  wipe() {
+    if (!this.guard()) return;
+    this.noise({ dur: 0.5, vol: 0.1, f0: 2600, f1: 300, q: 1.4, wet: 0.2 });
+    this.thud(this.t0 + 0.42, 0.16);
+  }
+
   /* ── Music: three real tracks with DJ-style crossfades ───────── */
 
   /**

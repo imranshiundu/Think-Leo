@@ -12,9 +12,10 @@
 import { Leo } from "@/components/leo/Leo";
 import { ChestArt } from "@/components/leo/badges";
 import { AmbientCartoons } from "@/components/game/ambient";
+import { SpaceSky } from "@/components/game/SpaceSky";
 import { Sticker } from "@/components/leo/stickers";
 import { HeartPill, SoundToggles, StreakFlame, StarRow } from "@/components/game/bits";
-import { LEVELS_PER_WORLD, WORLDS, isUnlocked, worldOf } from "@/lib/game";
+import { LEVELS_PER_WORLD, WORLDS, WORLD_GATE_DONE, isUnlocked, worldOf } from "@/lib/game";
 import { sfx } from "@/lib/sound";
 import { useLeo } from "@/lib/store";
 import { AnimatePresence, motion } from "framer-motion";
@@ -72,7 +73,6 @@ export function LevelMap({
         ? firstLockedInWorld
         : currentLevel;
     el.scrollTo({ top: nodeY(target) * scale - el.clientHeight * 0.55, behavior: "instant" as ScrollBehavior });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scale]);
 
   useEffect(() => {
@@ -82,13 +82,18 @@ export function LevelMap({
   }, [toast]);
 
   const clickNode = (i: number) => {
-    if (isUnlocked(i, save.stars)) {
+    if (isUnlocked(i, save.stars, save.done)) {
       sfx.click();
       onPlay(i);
     } else {
       sfx.lockClick();
       setShake((s) => s + 1);
-      setToast({ msg: `Earn a star on level ${i - 1} to unlock this one!`, key: Date.now() });
+      const world = worldOf(i).id;
+      const msg =
+        world > 0 && i === world * LEVELS_PER_WORLD + 1
+          ? `Finish ${WORLD_GATE_DONE} levels in ${WORLDS[world - 1].name} to open this world!`
+          : `Finish level ${i - 1} to unlock this one!`;
+      setToast({ msg, key: Date.now() });
     }
   };
 
@@ -113,6 +118,9 @@ export function LevelMap({
   return (
     <div className="leo-bg h-screen w-full overflow-hidden">
       {/* ambient jungle/sea/space/candy buddies floating behind the map */}
+      {Math.max(0, Math.min(WORLDS.length - 1, startWorld)) === 2 && (
+        <SpaceSky className="pointer-events-none absolute inset-0 z-0" opacity={0.4} />
+      )}
       <AmbientCartoons world={Math.max(0, Math.min(WORLDS.length - 1, startWorld))} count={6} opacity={0.13} />
       {/* fixed HUD */}
       <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-2 bg-gradient-to-b from-[#fff7e6] via-[#fff7e6ee] to-transparent px-4 py-3">
@@ -224,7 +232,7 @@ export function LevelMap({
             const i = k + 1;
             const w = worldOf(i);
             const stars = save.stars[i] ?? 0;
-            const unlocked = isUnlocked(i, save.stars);
+            const unlocked = isUnlocked(i, save.stars, save.done);
             const isCurrent = i === currentLevel;
             return (
               <motion.div
@@ -258,7 +266,7 @@ export function LevelMap({
                       : undefined
                   }
                 >
-                  {unlocked ? i : <Lock width={20} height={20} />}
+                  {unlocked ? (save.done[i] && stars === 0 ? "✓" : i) : <Lock width={20} height={20} />}
                   {stars > 0 && (
                     <div className="absolute -bottom-[26px] left-1/2 -translate-x-1/2">
                       <StarRow n={stars} size={13} />
