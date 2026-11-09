@@ -1,17 +1,22 @@
-/* Think Leo — offline service worker v4
+/* Think Leo — offline service worker v5
  * ─────────────────────────────────────
  * The install contract: add it to the home screen, launch it, and it
  * works even with the Wi-Fi off. Strategy:
  *   · app shell + icons + audio  → precached at install
- *   · static assets (_next/*)    → cache-first (immutable, versioned)
+ *   · code (_next/*, js, css)    → NETWORK-FIRST, cached as offline fallback
+ *                                  (v4 cached code first, so devices kept
+ *                                  running the old build after every fix —
+ *                                  the "still broken" bug)
  *   · music (/audio/*.mp3)       → cache-first, streamed from disk cache
  *   · navigations                → network-first, offline → cached "/"
  *   · /api/*                     → network-only (device log is fire-and-forget)
  *
- * v4 — new offline shell for LEO EGGS + a forced cache refresh so every
- * device leaves the old build behind (phones were still serving v3).
+ * v5 — code always comes from the network while the kid is online, so the
+ * newest game reaches every phone on the very next launch; offline play
+ * still falls back to the last-good copy. Installing v5 also deletes every
+ * v1–v4 cache, forcing all devices onto fresh code.
  */
-const VERSION = "think-leo-v4";
+const VERSION = "think-leo-v5";
 const CORE = [
   "/",
   "/manifest.webmanifest",
@@ -44,6 +49,34 @@ self.addEventListener("message", (event) => {
   if (event.data === "SKIP_WAITING") self.skipWaiting();
 });
 
+/** Fresh whenever online; last-good copy when offline. */
+async function networkFirst(req, fallbackToShell = false) {
+  const cache = await caches.open(VERSION);
+  try {
+    const fresh = await fetch(req);
+    if (fresh && fresh.ok) cache.put(req, fresh.clone());
+    return fresh;
+  } catch {
+    const hit = await cache.match(req);
+    if (hit) return hit;
+    if (fallbackToShell) {
+      const shell = await cache.match("/");
+      if (shell) return shell;
+    }
+    return Response.error();
+  }
+}
+
+/** Immutable goodies (icons, music): cache-first, fill on use. */
+async function cacheFirst(req) {
+  const cache = await caches.open(VERSION);
+  const hit = await cache.match(req);
+  if (hit) return hit;
+  const fresh = await fetch(req);
+  if (fresh && fresh.ok) cache.put(req, fresh.clone());
+  return fresh;
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
@@ -52,38 +85,19 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return; // live network only
 
-  // immutable build assets + icons + music: cache-first, populate on use
-  const isStatic =
-    url.pathname.startsWith("/_next/static/") ||
+  // music + icons + manifest never change between builds → cache-first
+  const isImmutable =
     url.pathname.startsWith("/icons/") ||
     url.pathname.startsWith("/audio/") ||
-    /\.(css|js|png|jpg|jpeg|svg|webp|woff2?|webmanifest|mp3)$/.test(url.pathname);
+    /\.(png|jpg|jpeg|svg|webp|mp3|webmanifest)$/.test(url.pathname);
 
-  if (isStatic) {
-    event.respondWith(
-      caches.match(req).then(
-        (hit) =>
-          hit ||
-          fetch(req).then((res) => {
-            const copy = res.clone();
-            caches.open(VERSION).then((c) => c.put(req, copy));
-            return res;
-          })
-      )
-    );
+  if (isImmutable) {
+    event.respondWith(cacheFirst(req));
     return;
   }
 
-  // navigations: network-first so updates land, cache fallback so offline works
-  if (req.mode === "navigate") {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put("/", copy));
-          return res;
-        })
-        .catch(() => caches.match("/").then((hit) => hit || Response.error()))
-    );
-  }
+  // everything else (code, styles, navigations): NETWORK-FIRST.
+  // Dev-mode chunks and freshly shipped fixes must NEVER be shadowed by a
+  // cached copy — that was the whole v4 bug.
+  event.respondWith(networkFirst(req, req.mode === "navigate"));
 });
