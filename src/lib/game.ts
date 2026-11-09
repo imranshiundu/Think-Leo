@@ -95,7 +95,7 @@ export const WORLDS: World[] = [
 ];
 
 export const LEVELS_PER_WORLD = 10;
-export const TOTAL_LEVELS = WORLDS.length * LEVELS_PER_WORLD; // 40
+export const TOTAL_LEVELS = WORLDS.length * LEVELS_PER_WORLD; // 60
 export const ROUND_COUNT = 8; // questions per level
 export const RUSH_SECONDS = 12; // "Leo Rush" finale length
 export const MAX_HEARTS = 5;

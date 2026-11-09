@@ -15,8 +15,8 @@ import {
   PITY_MAX,
   rollFeedCard,
   friendsOf,
-  type Rarity,
 } from "../src/lib/feed";
+import type { Rarity } from "../src/lib/eggs";
 
 let fails = 0;
 const fail = (m: string) => {

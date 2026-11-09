@@ -495,7 +495,7 @@ export function FeedGame({ onExit }: { onExit: () => void }) {
         <p className="font-display text-xs font-semibold text-leo-ink-soft">
           {feedPulls === 0
             ? "Every card hides a friend. Collect them all!"
-            : `${feedPulls} {feedPulls === 1 ? "card" : "cards"} opened · the feed never ends`}
+            : `${feedPulls} ${feedPulls === 1 ? "card" : "cards"} opened · the feed never ends`}
         </p>
       </div>
 
