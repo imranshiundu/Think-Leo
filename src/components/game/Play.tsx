@@ -12,6 +12,7 @@
  * (Candy-Crush "Sugar Crush" moment). Math in docs/ALGORITHM.md §4–6.
  */
 
+import { AmbientCartoons } from "@/components/game/ambient";
 import { Leo } from "@/components/leo/Leo";
 import { ChestArt } from "@/components/leo/badges";
 import { Sticker, StickerTile, isStickerId, type StickerId } from "@/components/leo/stickers";
@@ -39,7 +40,7 @@ import {
   xpForRun,
   type Mood,
 } from "@/lib/game";
-import { buildPlan, makeQuestion, makeRushQuestion, type Question } from "@/lib/questions";
+import { buildPlan, makeQuestion, makeRushQuestion, WORLD_TILES, type Question } from "@/lib/questions";
 import { sfx } from "@/lib/sound";
 import { useLeo, useQuests } from "@/lib/store";
 import { AnimatePresence, motion } from "framer-motion";
@@ -122,6 +123,9 @@ export function Play({
   const [leoMood, setLeoMood] = useState<Mood>("idle");
   const [bubble, setBubble] = useState<string | null>(null);
   const [confettiKey, setConfettiKey] = useState(0);
+  /* floating "+120" score pops and combo banners (the candy layer) */
+  const [pops, setPops] = useState<{ id: number; pts: number }[]>([]);
+  const [banner, setBanner] = useState<{ id: number; text: string } | null>(null);
 
   /* rush state */
   const [rushQs, setRushQs] = useState<Question[]>([]);
@@ -212,7 +216,8 @@ export function Play({
         sfx.whoosh();
         sfx.rushGo();
         window.setTimeout(() => {
-          setRushQs(Array.from({ length: 30 }, (_, i) => makeRushQuestion(diff, i, attemptRef.current)));
+          // 200 rapid-fire questions: even the fastest kid cannot outrun the clock
+          setRushQs(Array.from({ length: 200 }, (_, i) => makeRushQuestion(diff, i, attemptRef.current)));
           setRushIdx(0);
           setRushLeft(RUSH_SECONDS);
           setPhase("rush");
@@ -258,6 +263,15 @@ export function Play({
         if (nc >= 3) window.setTimeout(() => sfx.combo(nc), 140);
         setLeoMood(nc >= 5 ? "excited" : "happy");
         setBubble(nc >= 5 ? UNSTOPPABLE[nc % UNSTOPPABLE.length] : PRAISE[nc % PRAISE.length]);
+        /* juice: floating "+points" and milestone banners */
+        const popId = Date.now() + Math.random();
+        setPops((p) => [...p, { id: popId, pts }]);
+        window.setTimeout(() => setPops((p) => p.filter((x) => x.id !== popId)), 950);
+        if (nc === 5 || nc === 8 || nc === 10) {
+          const bid = Date.now() + Math.random();
+          setBanner({ id: bid, text: UNSTOPPABLE[nc % UNSTOPPABLE.length] });
+          window.setTimeout(() => setBanner((b) => (b && b.id === bid ? null : b)), 1200);
+        }
       } else {
         store.loseHeart();
         store.trackAnswer(false);
@@ -358,6 +372,14 @@ export function Play({
     }
   }, [score, rushScore, answeredCount, correctCount, rushHits, levelIdx, world.id]);
 
+  /* ── THE RUSH CLOCK ────────────────────────────────────────────
+     endRush is rebuilt on every rush hit (its deps include rushScore
+     and rushHits), so this effect MUST NOT depend on it — otherwise
+     every correct tap would restart the 12 seconds and the level
+     would never, ever end. We call the latest endRush through a ref
+     and key the interval on the phase alone. */
+  const endRushRef = useRef(endRush);
+  endRushRef.current = endRush;
   useEffect(() => {
     if (phase !== "rush") return;
     const start = performance.now();
@@ -366,11 +388,11 @@ export function Play({
       setRushLeft(Math.max(0, left));
       if (left <= 0) {
         window.clearInterval(id);
-        endRush();
+        endRushRef.current();
       }
     }, 100);
     return () => window.clearInterval(id);
-  }, [phase, endRush]);
+  }, [phase]);
 
   const rushAnswer = useCallback(
     (idx: number | null) => {
@@ -405,6 +427,7 @@ export function Play({
   const danger = phase === "play" && timeLeft <= 3.5;
   const hotCombo = combo >= 5 || (phase === "rush" && rushCombo >= 4);
   const rushQ = phase === "rush" ? rushQs[rushIdx] : null;
+  const parade = WORLD_TILES[world.id] ?? WORLD_TILES[0];
 
   /* heartbeat under danger */
   useEffect(() => {
@@ -426,6 +449,8 @@ export function Play({
       style={{ background: `linear-gradient(180deg, ${world.wash[0]}, ${world.wash[1]})` }}
     >
       <QuestWatch />
+      {/* living background: world-flavoured cartoons drifting behind the action */}
+      <AmbientCartoons world={world.id} count={8} opacity={0.15} />
       {/* heartbeat vignette */}
       {danger && (
         <div
@@ -434,8 +459,51 @@ export function Play({
         />
       )}
       {hotCombo && <div className="combo-hot pointer-events-none absolute inset-0 z-10" />}
+      {/* LEO RUSH: racing light-streaks + pulsing aura */}
+      {phase === "rush" && (
+        <>
+          <div className="rush-lines pointer-events-none absolute inset-0 z-10" />
+          <div className="rush-aura pointer-events-none absolute inset-0 z-10" />
+        </>
+      )}
 
       <ConfettiBurst fireKey={confettiKey} />
+
+      {/* floating +points */}
+      <div className="pointer-events-none absolute inset-x-0 top-16 z-30 flex justify-center">
+        <AnimatePresence>
+          {pops.map((p) => (
+            <motion.span
+              key={p.id}
+              initial={{ y: 18, opacity: 0, scale: 0.5 }}
+              animate={{ y: -44, opacity: [0, 1, 1, 0], scale: [0.5, 1.25, 1, 0.9] }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.9, ease: "easeOut" }}
+              className="font-display text-3xl font-bold text-leo-leaf-deep drop-shadow-[0_2px_0_rgba(255,255,255,0.9)]"
+            >
+              +{p.pts}
+            </motion.span>
+          ))}
+        </AnimatePresence>
+      </div>
+
+      {/* combo milestone banner sweeping across the screen */}
+      <AnimatePresence>
+        {banner && (
+          <motion.div
+            key={banner.id}
+            initial={{ x: "-120%", rotate: -3 }}
+            animate={{ x: "0%", rotate: -3 }}
+            exit={{ x: "130%", rotate: -3 }}
+            transition={{ type: "spring", stiffness: 210, damping: 20 }}
+            className="pointer-events-none absolute left-0 top-1/3 z-40"
+          >
+            <div className="rounded-r-2xl border-[3px] border-white bg-gradient-to-r from-leo-sun via-leo-berry to-leo-grape px-6 py-2 shadow-[0_6px_0_rgba(0,0,0,0.15)]">
+              <span className="font-display text-2xl font-bold text-white text-outline-sm">{banner.text}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* HUD */}
       <div className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 px-4 py-3">
@@ -513,13 +581,17 @@ export function Play({
             </div>
 
             {/* Leo + question card */}
-            <div className="flex w-full max-w-2xl items-end gap-3">
-              <div className="hidden shrink-0 md:block">
+            <div className="flex w-full max-w-2xl items-end gap-2 sm:gap-3">
+              <div className="hidden shrink-0 sm:block">
                 <Leo mood={leoMood} size={130} bubble={bubble} />
               </div>
-              <div className={`leo-card w-full p-5 ${shakeKey % 2 === 1 && phase === "reveal" && !revealOk ? "anim-shake" : ""}`}>
-                <h2 className="text-center font-display text-xl font-bold text-leo-ink">{q.prompt}</h2>
-                <div className="mt-4">
+              {/* pocket Leo keeps the mascot on phones too */}
+              <div className="shrink-0 sm:hidden">
+                <Leo mood={leoMood} size={64} />
+              </div>
+              <div className={`leo-card w-full p-4 sm:p-5 ${shakeKey % 2 === 1 && phase === "reveal" && !revealOk ? "anim-shake" : ""}`}>
+                <h2 className="text-center font-display text-lg font-bold text-leo-ink sm:text-xl">{q.prompt}</h2>
+                <div className="mt-3 sm:mt-4">
                   <QuestionStage q={q} reveal={phase === "reveal"} picked={picked} onAnswer={handleAnswer} />
                 </div>
               </div>
@@ -659,6 +731,44 @@ export function Play({
                 <Stat label="Accuracy" value={`${Math.round(results.accuracy * 100)}%`} />
                 <Stat label="XP" value={`+${results.xp}`} />
               </div>
+
+              {/* star slam: one shockwave ring per earned star, timed with the chimes */}
+              <div className="pointer-events-none relative mx-auto mt-3 h-0 w-0">
+                {Array.from({ length: results.stars }, (_, i) => (
+                  <span
+                    key={i}
+                    className="anim-ring absolute -left-8 -top-8 h-16 w-16 rounded-full border-4 border-leo-sun"
+                    style={{ animationDelay: `${0.62 + i * 0.38}s` }}
+                  />
+                ))}
+              </div>
+
+              {/* the world's cartoon crowd cheers the result */}
+              {results.stars > 0 && (
+                <div className="mt-4 flex items-end justify-center gap-1.5" aria-hidden>
+                  {parade.map((s, i) => (
+                    <motion.span
+                      key={`${s}-${i}`}
+                      initial={{ y: 26, opacity: 0, scale: 0.6 }}
+                      animate={{ y: [0, -8, 0], opacity: 1, scale: 1 }}
+                      transition={{
+                        y: { duration: 0.62, repeat: Infinity, ease: "easeInOut", delay: i * 0.09 },
+                        opacity: { delay: 0.35 + i * 0.1 },
+                        scale: { delay: 0.35 + i * 0.1, type: "spring", stiffness: 300, damping: 14 },
+                      }}
+                    >
+                      <Sticker id={s} size={34} />
+                    </motion.span>
+                  ))}
+                  <motion.span
+                    initial={{ scale: 0, rotate: -30 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ delay: 0.9, type: "spring", stiffness: 280, damping: 12 }}
+                  >
+                    <Leo mood="celebrate" size={44} />
+                  </motion.span>
+                </div>
+              )}
 
               {results.rushHits >= 8 && (
                 <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.7 }} className="pill mx-auto mt-3 gap-1.5 px-3 py-1 text-sm text-leo-berry-deep">

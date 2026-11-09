@@ -6,7 +6,7 @@
 >
 > Code map: `src/lib/game.ts` (economy) · `src/lib/questions.ts` (puzzle
 > factory) · `src/lib/sound.ts` (audio engine) · `src/lib/store.ts` (save
-> state) · `src/lib/device.ts` (laptop gate) · `src/components/leo/Leo.tsx`
+> state) · `src/lib/device.ts` (device detection) · `src/components/leo/Leo.tsx`
 > (mascot) · `src/components/game/*` (screens).
 
 ---
@@ -359,10 +359,11 @@ soon as it is allowed to. Music sits under the SFX mix, never on top.
 
 ---
 
-## 9. The laptop-only gate
+## 9. Device detection — everyone plays, every visit is recorded
 
-**Requirement: the game never runs on phones or tablets.** `detectDevice()`
-(`src/lib/device.ts`) returns `mobile` when *any* of:
+**Policy (updated): laptops, phones and tablets all get the full game.**
+`detectDevice()` (`src/lib/device.ts`) still classifies the device, but the
+result is now used for *recording and tuning*, never for blocking:
 
 ```
 1. mobile UA          /Android|iPhone|iPod|Windows Phone|…|iPad/
@@ -373,12 +374,17 @@ soon as it is allowed to. Music sits under the SFX mix, never on top.
 
 Rule of thumb: **a laptop's physical signature is a fine primary pointer**
 (mouse/trackpad). Touchscreen laptops pass; phones and tablets (including
-iPads pretending to be Macs) don't. `watchDevice()` re-checks on
-resize/rotation, and the gate screen has an honest escape hatch ("Wait — I am
-on a laptop") that re-runs detection. While gated, *nothing* of the game
-renders — not even behind a loader.
+iPads pretending to be Macs) classify as `mobile`. `watchDevice()` re-checks
+on resize/rotation (docked tablets, rotated phones) so the recorded details
+always match reality.
 
-### 9.1 Device details are recorded (both sides of the gate)
+Phone-specific adaptations that ship with this policy:
+
+- the level map scales itself to the viewport (same trail, same feel);
+- a pocket-sized Leo rides along next to every question card;
+- option grids, cards and the HUD wrap cleanly down to 360 px widths.
+
+### 9.1 Device details are recorded (every visit)
 
 `src/lib/deviceInfo.ts` builds an anonymous hardware snapshot on every load:
 
@@ -393,9 +399,7 @@ It is stored twice: locally (`localStorage`, last 20 visits) and POSTed to
 `/api/device`, which validates the payload with zod and appends a
 `DeviceVisit` row to the SQLite database (Prisma). Reporting is throttled to
 twice a day per device and is strictly fire-and-forget — the game never waits
-on the network. The gate screen shows the detected device back to the visitor
-("We spotted: Phone · Android · Chrome · 393×873"), which proves the detection
-is real, not a vibe.
+on the network.
 
 ---
 
@@ -411,7 +415,7 @@ blink (scaleY squash every ~4 s); paws animate independently when raised.
 | `happy` | open | open smile | bounce | correct answer |
 | `excited` | wide | open | bounce fast | combos ≥ 5, Rush, intro |
 | `sad` | downturned pupils, brows | frown | slow droop | miss / timeout / out of hearts |
-| `thinking` | pupils up-right, one brow | flat | still, paw on chin | phone gate, hints |
+| `thinking` | pupils up-right, one brow | flat | still, paw on chin | hints, splash |
 | `celebrate` | **star eyes** | open | dance + sparkles | level clear |
 | `sleep` | closed | flat | slow breathe + zzz | before 6 AM |
 
@@ -440,8 +444,9 @@ app never flashes unhydrated state.
   for navigations with cached-shell fallback → **the game fully boots and
   sounds right offline**. `SKIP_WAITING` + `clients.claim()` plus a
   controller-change reload keep installed apps auto-updated.
-- Registration happens at the root layout — the service worker installs even
-  on the phone gate, so the installed app on any device is a real PWA.
+- Registration happens at the root layout — the service worker installs on
+  first load of any device, so the installed app on laptops, phones and
+  tablets is a real PWA.
 - Install prompt captured via `beforeinstallprompt` and surfaced as a chunky
   button on Home.
 

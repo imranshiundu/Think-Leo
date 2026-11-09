@@ -1,8 +1,9 @@
 /**
- * Think Leo — Device Gate
- * ───────────────────────
- * THINK LEO IS A LAPTOP / DESKTOP EXPERIENCE.
- * The game (the "emulator") must never run on phones or tablets.
+ * Think Leo — Device Detection
+ * ────────────────────────────
+ * Classifies the device: phones & tablets report "mobile", laptops and
+ * desktops report "laptop". EVERYONE gets to play — the result is used
+ * for recording (deviceInfo.ts) and for mobile tuning, never for blocking.
  *
  * Detection strategy (documented in docs/ALGORITHM.md §9):
  *  1. Classic mobile User-Agents (Android, iPhone, iPod, Windows Phone…)
@@ -12,8 +13,9 @@
  *     a FINE primary pointer, so it passes. A phone reports coarse.
  *  4. Tiny touch screens (min(w,h) < 700px) with no fine pointer.
  *
- * Rule of thumb: we require a real pointing device (mouse/trackpad) as the
- * PRIMARY pointer. That is the physical signature of a laptop.
+ * Rule of thumb: we read the PRIMARY pointer. Mouse/trackpad-first = laptop;
+ * finger-first = phone or tablet. The kind only labels the visit — it never
+ * gates the game.
  */
 
 export type DeviceKind = "laptop" | "mobile";
