@@ -128,9 +128,15 @@ export function starsFor(accuracy: number): 0 | 1 | 2 | 3 {
   return 0;
 }
 
-/** XP earned for a finished level run. */
+/**
+ * XP earned for a finished level run — Duolingo-scale (a lesson ≈ 10–30 XP,
+ * the daily goal = a handful of lessons). Score stays big and juicy on the
+ * results screen, but XP is deliberately small so player levels, the daily
+ * ring and the weekly league each take a satisfying *few days* to climb —
+ * one run must never jump three leagues (that bug shipped once; never again).
+ */
 export function xpForRun(score: number, stars: number): number {
-  return Math.round(score / 12) + stars * 15;
+  return 8 + stars * 6 + Math.min(16, Math.floor(score / 250));
 }
 
 /** Player level curve: each level costs a bit more XP than the last. */
@@ -148,14 +154,18 @@ export function playerLevelFromXp(xp: number): number {
   return lvl;
 }
 
-/** Weekly league tiers — cosmetic bragging rights, reset every Monday. */
+/**
+ * Weekly league tiers — cosmetic bragging rights, reset every Monday.
+ * Calibrated to the XP economy: a good run ≈ 25–35 XP, a solid day ≈ 60–120 XP,
+ * so Bronze lands after ~2–3 days of play and Legend is a true weekly grind.
+ */
 export const LEAGUES: { name: string; min: number; badge: BadgeId; color: string }[] = [
   { name: "Grass", min: 0, badge: "sprout", color: "#58cc02" },
-  { name: "Bronze", min: 150, badge: "bronze", color: "#c47a3d" },
-  { name: "Silver", min: 350, badge: "silver", color: "#9aa7b5" },
-  { name: "Gold", min: 700, badge: "gold", color: "#ffc93c" },
-  { name: "Crystal", min: 1200, badge: "gem", color: "#2ec4b6" },
-  { name: "Legend", min: 2000, badge: "trophy", color: "#9b5de5" },
+  { name: "Bronze", min: 100, badge: "bronze", color: "#c47a3d" },
+  { name: "Silver", min: 250, badge: "silver", color: "#9aa7b5" },
+  { name: "Gold", min: 500, badge: "gold", color: "#ffc93c" },
+  { name: "Crystal", min: 900, badge: "gem", color: "#2ec4b6" },
+  { name: "Legend", min: 1500, badge: "trophy", color: "#9b5de5" },
 ];
 
 export function leagueOf(weekXp: number) {
@@ -251,30 +261,35 @@ export const QUEST_POOL: QuestDef[] = [
   { id: "rush8", label: "8 Rush hits in one LEO RUSH", event: "rushhits", target: 8, rewardXp: 30, icon: "rocket" },
 ];
 
-/** Deterministic 3-quest board for a given day (same board all week-end). */
+/**
+ * Deterministic 3-quest board for a given day (same board all day).
+ * CONTRACT (the store depends on this): EXACTLY 3 quests, all with
+ * DISTINCT event types — the save-state engine indexes progress by board
+ * position and must never see two quests racing on the same event.
+ */
 export function questsForDay(day: string, dailyGoalXp = DAILY_GOAL_XP): QuestDef[] {
   let h = 2166136261;
   for (let i = 0; i < day.length; i++) {
     h ^= day.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  const rng = [0, 0, 0].map((_, i) => {
-    h = Math.imul(h ^ (i + 1), 2654435761);
-    return ((h >>> 0) % 1000) / 1000;
-  });
+  const rng = () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822519);
+    h = Math.imul(h ^ (h >>> 13), 3266489917);
+    return ((h ^= h >>> 16) >>> 0) / 4294967296;
+  };
   // Slot 1 always anchors the daily goal (xp 60 or 120) — the ring and the
   // quest board then tell one story, not two.
   const anchor = dailyGoalXp >= 120 ? "xp120" : "xp60";
-  const pool = QUEST_POOL.filter((q) => q.id !== anchor);
-  const picked: QuestDef[] = [QUEST_POOL.find((q) => q.id === anchor)!];
-  for (const r of rng) {
-    const q = pool[Math.floor(r * pool.length)];
-    if (!picked.includes(q)) picked.push(q);
-  }
+  const anchorDef = QUEST_POOL.find((q) => q.id === anchor)!;
+  const picked: QuestDef[] = [anchorDef];
+  const usedEvents = new Set<string>([anchorDef.event]);
   let guard = 0;
-  while (picked.length < 3 && guard++ < 50) {
-    const q = pool[guard % pool.length];
-    if (!picked.includes(q)) picked.push(q);
+  while (picked.length < 3 && guard++ < 200) {
+    const q = QUEST_POOL[Math.floor(rng() * QUEST_POOL.length)];
+    if (usedEvents.has(q.event)) continue; // one quest per event type
+    picked.push(q);
+    usedEvents.add(q.event);
   }
   return picked;
 }

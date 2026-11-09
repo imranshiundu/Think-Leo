@@ -10,9 +10,15 @@
 import { Leo } from "@/components/leo/Leo";
 import { Sticker } from "@/components/leo/stickers";
 import { motion } from "framer-motion";
-import { Brain, Flame, Laptop, Trophy, Volume2 } from "lucide-react";
+import { Brain, Flame, Laptop, MonitorSmartphone, Trophy, Volume2 } from "lucide-react";
 
-export function PhoneGate({ onRetry }: { onRetry: () => void }) {
+export function PhoneGate({
+  onRetry,
+  deviceLine,
+}: {
+  onRetry: () => void;
+  deviceLine: string;
+}) {
   return (
     <div className="leo-bg fixed inset-0 z-[95] flex flex-col items-center justify-center overflow-y-auto px-6 py-10">
       <div className="flex w-full max-w-md flex-col items-center text-center">
@@ -52,6 +58,21 @@ export function PhoneGate({ onRetry }: { onRetry: () => void }) {
           <b className="text-leo-ink">Think Leo</b> there, and Leo will be waiting with a
           fresh quest!
         </motion.p>
+
+        {/* proof we know exactly which device this is */}
+        {deviceLine && (
+          <motion.div
+            className="pill mt-4 gap-2 px-4 py-2 text-sm"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+          >
+            <MonitorSmartphone width={16} height={16} className="shrink-0 text-leo-teal-deep" />
+            <span className="text-leo-ink">
+              We spotted: <b className="font-display">{deviceLine}</b>
+            </span>
+          </motion.div>
+        )}
 
         <motion.div
           className="mt-5 flex flex-wrap justify-center gap-2"

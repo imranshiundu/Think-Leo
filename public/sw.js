@@ -1,8 +1,23 @@
-/* Think Leo — offline service worker
- * cache-first for static assets, network-first for pages with '/' fallback.
+/* Think Leo — offline service worker v3
+ * ─────────────────────────────────────
+ * The PWA contract: install it, launch it from the home screen, and it
+ * works even with the Wi-Fi off. Strategy:
+ *   · app shell + icons + audio  → precached at install
+ *   · static assets (_next/*)    → cache-first (immutable, versioned)
+ *   · music (/audio/*.mp3)       → cache-first, streamed from disk cache
+ *   · navigations                → network-first, offline → cached "/"
+ *   · /api/*                     → network-only (device log is fire-and-forget)
  */
-const VERSION = "think-leo-v1";
-const CORE = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
+const VERSION = "think-leo-v3";
+const CORE = [
+  "/",
+  "/manifest.webmanifest",
+  "/logo.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/maskable-512.png",
+  "/icons/apple-touch-icon.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -22,18 +37,24 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data === "SKIP_WAITING") self.skipWaiting();
+});
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/")) return; // live network only
 
-  // static assets: cache-first
+  // immutable build assets + icons + music: cache-first, populate on use
   const isStatic =
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
-    /\.(css|js|png|svg|jpg|jpeg|webp|woff2?|webmanifest)$/.test(url.pathname);
+    url.pathname.startsWith("/audio/") ||
+    /\.(css|js|png|jpg|jpeg|svg|webp|woff2?|webmanifest|mp3)$/.test(url.pathname);
 
   if (isStatic) {
     event.respondWith(
@@ -50,7 +71,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // navigations: network-first, fall back to cached shell
+  // navigations: network-first so updates land, cache fallback so offline works
   if (req.mode === "navigate") {
     event.respondWith(
       fetch(req)

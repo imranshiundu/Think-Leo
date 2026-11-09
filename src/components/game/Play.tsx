@@ -320,6 +320,9 @@ export function Play({
     const stars = starsFor(accuracy);
     const xp = stars > 0 ? xpForRun(total, stars) : 0;
     const isBest = stars > 0 && total > (s.best[levelIdx] ?? 0);
+    // ANY finished run counts today as played — streaks record on effort,
+    // not only on wins (a kid who tried and missed must keep their flame).
+    s.noteActivity();
     if (!recordedRef.current) {
       recordedRef.current = true;
       if (rushHits > 0) s.trackRush(rushHits);
@@ -370,7 +373,8 @@ export function Play({
   }, [phase, endRush]);
 
   const rushAnswer = useCallback(
-    (idx: number) => {
+    (idx: number | null) => {
+      if (idx === null) return; // no timeout penalty inside the rush
       const rq = rushQs[rushIdx];
       if (!rq) return;
       const ok = idx === rq.answer;

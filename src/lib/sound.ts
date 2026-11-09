@@ -1,26 +1,43 @@
 /**
- * Think Leo — Sound Engine v2 (Web Audio, zero audio files)
+ * Think Leo — Sound Engine v3 (Web Audio SFX + real background music)
  * ────────────────────────────────────────────────────────
- * A tiny synth studio in ~400 lines. Design notes: docs/ALGORITHM.md §8.
+ * SFX: a tiny synth studio. Design notes: docs/ALGORITHM.md §8.
+ * MUSIC: three licensed background tracks (CC-BY by Kevin MacLeod,
+ * incompetech.com — properly composed, properly mixed, kid-approved):
+ *
+ *   /audio/home.mp3   "Carefree"                  — hub & map
+ *   /audio/play.mp3   "Monkeys Spinning Monkeys"  — gameplay
+ *   /audio/rush.mp3   "Sneaky Snitch"             — LEO RUSH finale
+ *
+ * · One synthesized impulse-response gives the SFX the same "room".
+ * · Instruments are a fixed palette (marimba, pluck, chime, horn, kit,
+ *   riser, roar) — every cue is a recipe over that palette.
+ * · The music player is autoplay-policy-proof: the requested mood is
+ *   remembered and playback retries on the first gesture / on resume.
+ * · Music ducks under big cues (fanfare, level-up) like a real DJ.
  *
  * Signal chain:
  *
  *   voice ─► voiceGain ─► pan ─┬─► sfxBus ─────────────┬─► master ─► comp ─► out
  *                              └─► reverbSend ─► conv ──┘        ▲
- *   music voices ─► musicBus ───────────────────────────┘   (duckable)
+ *   music (<audio> loops · crossfade · duck) ────────────┘
  *
- * · Master bus dynamics: a gentle compressor glues SFX + music so loud
- *   layers never clip (kids crank volume; we protect their ears).
- * · One synthesized impulse-response gives everything the same "room",
- *   the way a real foley kit would.
- * · Instruments are a fixed palette (marimba, pluck, chime, horn, kit,
- *   riser, roar) — every cue is a recipe over that palette, which is why
- *   the whole game sounds like one instrument family.
- * · Music = lookahead-scheduled 4-bar loop in 3 moods (home / play /
- *   rush) with bass, pads, arps and hats; the bus ducks under big cues.
+ * · Master bus dynamics: a gentle compressor glues SFX layers so loud
+ *   hits never clip (kids crank volume; we protect their ears).
  */
 
 type Osc = OscillatorType;
+
+type MusicMode = "home" | "play" | "rush";
+
+const MUSIC_SRC: Record<MusicMode, string> = {
+  home: "/audio/home.mp3",
+  play: "/audio/play.mp3",
+  rush: "/audio/rush.mp3",
+};
+
+/** Background level per mood — music sits UNDER the SFX, never on top. */
+const MUSIC_VOL: Record<MusicMode, number> = { home: 0.5, play: 0.42, rush: 0.52 };
 
 const NOTE = (semi: number, base = 440) => base * Math.pow(2, semi / 12);
 
@@ -43,16 +60,16 @@ class LeoSound {
   private master: GainNode | null = null;
   private comp: DynamicsCompressorNode | null = null;
   private sfxBus: GainNode | null = null;
-  private musicBus: GainNode | null = null;
   private reverb: ConvolverNode | null = null;
   private reverbSend: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
   private duckTimer: number | null = null;
 
-  private musicTimer: number | null = null;
-  private nextBarAt = 0;
-  private barIndex = 0;
-  private musicMode: "home" | "play" | "rush" | null = null;
+  /* music: three real tracks, at most one playing */
+  private tracks: Partial<Record<MusicMode, HTMLAudioElement>> = {};
+  private currentTrack: MusicMode | null = null;
+  private desiredTrack: MusicMode | null = null;
+  private fadeRafs = new WeakMap<HTMLAudioElement, number>();
 
   sfxOn = true;
   musicOn = true;
@@ -66,15 +83,20 @@ class LeoSound {
         document.removeEventListener("visibilitychange", this.onVis);
         document.addEventListener("visibilitychange", this.onVis);
       }
+      // autoplay policy: the first gesture is our chance to start the band
+      this.tryStartMusic();
     } catch {
       /* audio is a bonus, never a blocker */
     }
   }
 
   private onVis = () => {
-    if (!this.ctx) return;
-    if (document.visibilityState === "visible" && this.ctx.state === "suspended") {
-      void this.ctx.resume();
+    if (document.visibilityState === "hidden") {
+      const cur = this.currentTrack ? this.tracks[this.currentTrack] : null;
+      cur?.pause(); // battery manners
+    } else {
+      if (this.ctx && this.ctx.state === "suspended") void this.ctx.resume();
+      this.tryStartMusic();
     }
   };
 
@@ -117,10 +139,6 @@ class LeoSound {
     this.sfxBus = ctx.createGain();
     this.sfxBus.gain.value = 1;
     this.sfxBus.connect(this.master);
-
-    this.musicBus = ctx.createGain();
-    this.musicBus.gain.value = this.musicOn ? 0.2 : 0;
-    this.musicBus.connect(this.master);
 
     // reusable white noise (saves building a buffer per hat/snare)
     const nlen = Math.floor(ctx.sampleRate * 1.0);
@@ -207,6 +225,7 @@ class LeoSound {
       bus,
     } = o;
     const out = bus ?? this.sfxBus;
+    if (!out) return;
 
     const src = this.ctx.createBufferSource();
     src.buffer = this.noiseBuf;
@@ -319,22 +338,23 @@ class LeoSound {
     return this.sfxOn && !!this.ctx;
   }
 
-  /** brief music dip so a big cue always lands on top */
+  /**
+   * Brief music dip so a big cue always lands on top — a real DJ move,
+   * now with real music: fade down, let the fanfare land, ride back up.
+   */
   private duck() {
-    if (!this.ctx || !this.musicBus || !this.musicOn) return;
-    const t = this.t0;
-    const g = this.musicBus.gain;
-    g.cancelScheduledValues(t);
-    g.setValueAtTime(g.value, t);
-    g.linearRampToValueAtTime(0.07, t + 0.06);
-    g.linearRampToValueAtTime(this.musicOn ? 0.2 : 0, t + 0.85);
+    if (!this.musicOn || !this.currentTrack) return;
+    const a = this.tracks[this.currentTrack];
+    if (!a || a.paused) return;
+    const base = MUSIC_VOL[this.currentTrack];
+    this.fadeTo(a, base * 0.22, 90);
     if (this.duckTimer !== null) window.clearTimeout(this.duckTimer);
     this.duckTimer = window.setTimeout(() => {
-      if (this.ctx && this.musicBus && this.musicOn) {
-        this.musicBus.gain.cancelScheduledValues(this.t0);
-        this.musicBus.gain.setValueAtTime(0.2, this.t0);
+      const cur = this.currentTrack ? this.tracks[this.currentTrack] : null;
+      if (cur && this.currentTrack && this.musicOn && !cur.paused) {
+        this.fadeTo(cur, MUSIC_VOL[this.currentTrack], 700);
       }
-    }, 1000);
+    }, 950);
   }
 
   /* ── SFX library ────────────────────────────────────────────── */
@@ -563,97 +583,87 @@ class LeoSound {
     this.noise({ dur: 0.04, vol: 0.04, f0: 900, q: 2 });
   }
 
-  /* ── Music: 3 moods, lookahead-scheduled ────────────────────── */
+  /* ── Music: three real tracks with DJ-style crossfades ───────── */
 
   /**
-   * "Candy Waltz" — C · G · Am · F. The same progression everywhere;
-   * moods change tempo, density and drums, so the score feels alive
-   * without ever fighting the SFX.
+   * Request a mood. The request is REMEMBERED: if the browser blocks
+   * playback (autoplay policy) we retry on the next gesture / resume,
+   * so music reliably starts the moment it is allowed to.
    */
-  startMusic(mode: "home" | "play" | "rush") {
-    this.unlock();
-    if (!this.ctx || !this.musicBus) return;
-    if (this.musicMode === mode && this.musicTimer !== null) return;
-    this.stopMusic();
-    this.musicMode = mode;
-    this.musicBus.gain.setValueAtTime(this.musicOn ? (mode === "rush" ? 0.24 : mode === "play" ? 0.2 : 0.17) : 0, this.t0);
-    this.nextBarAt = this.t0 + 0.1;
-    this.barIndex = 0;
+  startMusic(mode: MusicMode) {
+    this.desiredTrack = mode;
+    this.tryStartMusic();
+  }
 
-    const CHORDS = [
-      { root: 130.81, tones: [261.63, 329.63, 392.0, 523.25] }, // C
-      { root: 98.0, tones: [246.94, 293.66, 392.0, 493.88] },   // G
-      { root: 110.0, tones: [220.0, 261.63, 329.63, 440.0] },   // Am
-      { root: 87.31, tones: [261.63, 349.23, 523.25, 659.26] }, // F
-    ];
-    const PENTA = [0, 2, 4, 7, 9, 12, 14];
-    const barLen = mode === "rush" ? 1.45 : mode === "play" ? 1.9 : 2.4;
+  private tryStartMusic() {
+    if (typeof window === "undefined" || typeof Audio === "undefined") return;
+    if (!this.musicOn || !this.desiredTrack) return;
+    const mode = this.desiredTrack;
 
-    const scheduleBar = () => {
-      if (!this.ctx || this.musicMode === null) return;
-      while (this.nextBarAt < this.t0 + 0.6) {
-        const bar = this.barIndex % 4;
-        const { root, tones } = CHORDS[bar];
-        const t = this.nextBarAt;
-        const bus = this.musicBus;
+    // already on it? make sure it's actually audible
+    if (this.currentTrack === mode) {
+      const cur = this.tracks[mode];
+      if (cur && cur.paused) void cur.play().catch(() => {});
+      return;
+    }
 
-        // pad — the warm floor
-        tones.forEach((f, i) =>
-          this.tone(f, {
-            at: t,
-            dur: barLen * 0.94,
-            type: i === 0 ? "sine" : "triangle",
-            vol: i === 0 ? 0.34 : 0.15,
-            attack: 0.35,
-            bus,
-          })
-        );
+    // crossfade out whatever is playing
+    const prev = this.currentTrack ? this.tracks[this.currentTrack] : null;
+    if (prev) {
+      const old = prev;
+      this.fadeTo(old, 0, 500, () => {
+        old.pause();
+        old.currentTime = 0; // replay from the top next time
+      });
+    }
 
-        // bass pulse
-        const beats = mode === "rush" ? 4 : 2;
-        for (let b = 0; b < beats; b++) {
-          this.tone(root, {
-            at: t + b * (barLen / beats),
-            dur: barLen / beats * 0.55,
-            type: "sine",
-            vol: 0.22,
-            attack: 0.012,
-            bus,
-          });
-        }
+    let a = this.tracks[mode];
+    if (!a) {
+      a = new Audio(MUSIC_SRC[mode]);
+      a.loop = true;
+      a.preload = "auto";
+      this.tracks[mode] = a;
+    }
+    this.currentTrack = mode;
+    a.volume = 0;
+    void a
+      .play()
+      .then(() => this.fadeTo(a!, MUSIC_VOL[mode], 900))
+      .catch(() => {
+        /* blocked — desiredTrack is remembered, we retry on the next gesture */
+      });
+  }
 
-        // arpeggio sparkle (picks its own path each bar)
-        const arpSteps = mode === "home" ? 2 : 4;
-        for (let s = 0; s < arpSteps; s++) {
-          if (Math.random() < (mode === "home" ? 0.5 : 0.8)) {
-            const f = NOTE(PENTA[Math.floor(Math.random() * PENTA.length)], 523.25);
-            this.pluck(f, t + s * (barLen / arpSteps), 0.07, s % 2 ? 0.3 : -0.3);
-          }
-        }
-
-        // drums — none at home, hats in play, backbeat in rush
-        if (mode === "play") {
-          for (let s = 0; s < 8; s++) this.hat(t + s * (barLen / 8), false, s % 2 ? 0.02 : 0.035);
-        } else if (mode === "rush") {
-          for (let s = 0; s < 8; s++) this.hat(t + s * (barLen / 8), s === 7, s % 2 ? 0.03 : 0.05);
-          this.snare(t + barLen / 4, 0.05);
-          this.snare(t + barLen * 0.75, 0.05);
-        }
-
-        this.nextBarAt += barLen;
-        this.barIndex += 1;
+  /** rAF volume ramp — one independent fade per <audio> element, so the
+   *  outgoing and incoming tracks of a crossfade never cancel each other. */
+  private fadeTo(a: HTMLAudioElement, to: number, ms: number, done?: () => void) {
+    const prev = this.fadeRafs.get(a);
+    if (prev !== undefined) cancelAnimationFrame(prev);
+    const from = a.volume;
+    const t0 = performance.now();
+    const step = (t: number) => {
+      const p = Math.min(1, (t - t0) / ms);
+      a.volume = Math.max(0, Math.min(1, from + (to - from) * p));
+      if (p < 1) this.fadeRafs.set(a, requestAnimationFrame(step));
+      else {
+        this.fadeRafs.delete(a);
+        done?.();
       }
     };
-    scheduleBar();
-    this.musicTimer = window.setInterval(scheduleBar, 300);
+    this.fadeRafs.set(a, requestAnimationFrame(step));
   }
 
   stopMusic() {
-    if (this.musicTimer !== null) {
-      window.clearInterval(this.musicTimer);
-      this.musicTimer = null;
+    this.desiredTrack = null;
+    const cur = this.currentTrack ? this.tracks[this.currentTrack] : null;
+    if (cur) {
+      const a = cur;
+      this.fadeTo(a, 0, 350, () => {
+        a.pause();
+        a.currentTime = 0;
+      });
     }
-    this.musicMode = null;
+    this.currentTrack = null;
   }
 
   setSfx(on: boolean) {
@@ -662,10 +672,19 @@ class LeoSound {
 
   setMusic(on: boolean) {
     this.musicOn = on;
-    if (this.musicBus && this.ctx) {
-      this.musicBus.gain.setTargetAtTime(on && this.musicMode ? 0.2 : 0, this.t0, 0.2);
+    if (!on) {
+      const cur = this.currentTrack ? this.tracks[this.currentTrack] : null;
+      if (cur) {
+        const a = cur;
+        this.fadeTo(a, 0, 250, () => {
+          a.pause();
+          a.currentTime = 0;
+        });
+      }
+      this.currentTrack = null;
+    } else {
+      this.tryStartMusic();
     }
-    if (!on) this.stopMusic();
   }
 }
 

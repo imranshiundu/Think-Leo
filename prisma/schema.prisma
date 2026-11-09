@@ -30,3 +30,27 @@ model Post {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+/// Anonymous hardware snapshot of every device that opens Think Leo.
+/// No cookies, no accounts, no tracking ids — just "what did kids visit on".
+model DeviceVisit {
+  id          String   @id @default(cuid())
+  kind        String // "laptop" | "mobile" (the gate decision)
+  formFactor  String // Phone / Tablet / Laptop / Desktop
+  os          String
+  browser     String
+  platform    String
+  screen      String
+  viewport    String
+  pixelRatio  Float
+  cpuCores    Int?
+  ramGB       Float?
+  touchPoints Int
+  language    String
+  timezone    String
+  online      Boolean
+  standalone  Boolean // opened as an installed PWA
+  gpu         String
+  ua          String
+  createdAt   DateTime @default(now())
+}

@@ -15,8 +15,8 @@ import { PhoneGate } from "@/components/game/PhoneGate";
 import { Play } from "@/components/game/Play";
 import { Splash } from "@/components/game/Splash";
 import { AchievementToasts } from "@/components/game/bits";
-import { PWARegister } from "@/components/PWARegister";
 import { detectDevice, watchDevice, type DeviceKind } from "@/lib/device";
+import { deviceSummary, getDeviceInfo, recordDevice } from "@/lib/deviceInfo";
 import { LEVELS_PER_WORLD, WORLDS } from "@/lib/game";
 import { sfx } from "@/lib/sound";
 import { useLeo } from "@/lib/store";
@@ -27,6 +27,7 @@ type View = "home" | "map" | "play";
 
 export default function ThinkLeo() {
   const [device, setDevice] = useState<DeviceKind | null>(null);
+  const [deviceLine, setDeviceLine] = useState("");
   const [view, setView] = useState<View>("home");
   const [focusWorld, setFocusWorld] = useState(0);
   const [levelIdx, setLevelIdx] = useState(1);
@@ -38,9 +39,15 @@ export default function ThinkLeo() {
   const soundMusic = useLeo((s) => s.soundMusic);
   const stars = useLeo((s) => s.stars);
 
-  /* device gate — phones & tablets never pass */
+  /* device gate — phones & tablets never pass. Details are recorded
+     (locally + parents' dashboard) so every visit leaves a footprint. */
   useEffect(() => {
-    const t = window.setTimeout(() => setDevice(detectDevice()), 0);
+    const t = window.setTimeout(() => {
+      const kind = detectDevice();
+      setDevice(kind);
+      setDeviceLine(deviceSummary(getDeviceInfo()));
+      recordDevice();
+    }, 0);
     const un = watchDevice(setDevice);
     return () => {
       window.clearTimeout(t);
@@ -64,13 +71,18 @@ export default function ThinkLeo() {
     };
   }, []);
 
-  /* keep the engine in sync with the kid's sound settings */
+  /* keep the engine in sync with the kid's sound settings — and make the
+     music follow the screen (home/map = hub track; play/rush own theirs) */
   useEffect(() => {
     sfx.setSfx(soundSfx);
   }, [soundSfx]);
   useEffect(() => {
     sfx.setMusic(soundMusic);
-    if (soundMusic && view === "home") sfx.startMusic("home");
+  }, [soundMusic]);
+  useEffect(() => {
+    if (!soundMusic) return;
+    if (view === "home" || view === "map") sfx.startMusic("home");
+    // "play" is driven by the Play screen itself (play + rush moods)
   }, [soundMusic, view]);
 
   /* splash plays in full once per session */
@@ -90,13 +102,12 @@ export default function ThinkLeo() {
   }, [stars]);
 
   if (device === "mobile" && !gateAllow) {
-    return <PhoneGate onRetry={() => { setGateAllow(true); retryDevice(); }} />;
+    return <PhoneGate onRetry={() => { setGateAllow(true); retryDevice(); }} deviceLine={deviceLine} />;
   }
   if (device === null) return <div className="leo-bg fixed inset-0" />;
 
   return (
     <>
-      <PWARegister />
       <AchievementToasts />
       <LevelUpOverlay />
       <AnimatePresence>

@@ -161,7 +161,7 @@ export function LevelMap({
           {WORLDS.map((w, idx) => {
             const lastLevel = (idx + 1) * LEVELS_PER_WORLD;
             const reached = (save.stars[lastLevel] ?? 0) >= 1;
-            const claimed = !!save.chests[w];
+            const claimed = !!save.chests[w.id];
             const y = idx === 0 ? nodeY(1) - 78 : nodeY(idx * LEVELS_PER_WORLD) - GAP / 2 - 26;
             return (
               <div
@@ -178,7 +178,7 @@ export function LevelMap({
                 </div>
                 <button
                   type="button"
-                  onClick={() => openChest(w)}
+                  onClick={() => openChest(w.id)}
                   aria-label={claimed ? "Chest already opened" : reached ? "Open reward chest" : "Chest locked"}
                   className={`ml-1 flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border-[3px] ${
                     claimed
