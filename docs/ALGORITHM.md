@@ -114,8 +114,8 @@ kid-safe form.
 
 ## 3. Worlds, levels & the map
 
-- **4 worlds × 10 levels = 40 levels** (`WORLDS`, `LEVELS_PER_WORLD`):
-  Jungle Jam → Coral Cove → Space Hop → Candy Peak.
+- **6 worlds × 10 levels = 60 levels** (`WORLDS`, `LEVELS_PER_WORLD`):
+  Jungle Jam → Coral Cove → Space Hop → Candy Peak → Farm Days → Road Rush.
 - **Unlock rule (v4 — “levels must always end”):** level *i* unlocks when
   level *i−1* was **finished** — a star is the shiny version, but ANY
   completed run (even 0 stars, even practice) sets the `done[i−1]` flag and
@@ -140,7 +140,7 @@ kid-safe form.
 - **Level transitions:** every jump into a level plays a world-coloured
   circular wipe with Leo running across (`LevelWipe` in `ThinkLeo.tsx`) —
   travel is part of the game, not a route change.
-- **World chests** wait after levels 10/20/30/40: first 1-star clear claims
+- **World chests** wait after levels 10/20/30/40/50/60: first 1-star clear claims
   **+3 heart-refill tickets + 40 XP** (once each; `grantChest`).
 
 ---
@@ -656,3 +656,97 @@ eases in, an additive gold glow sprite (the tease), and a burst — two
 shell halves with gravity + 90 round glow sparks (radial-gradient sprite
 particles, never squares). DPR capped at 2, everything disposed on
 unmount; props reach the loop through refs so a hold never re-renders.
+
+---
+
+## 16. LEO FEED — the infinite surprise feed (v7)
+
+### 16.1 Why a feed, and what it copies
+
+The brief: *not* educational, "a game with the mind like an Instagram
+algorithm", something that keeps kids on the screen without a single
+question to answer. The feed format is the answer, and every mechanic
+has a named lineage:
+
+| Mechanic | Borrowed from | Why it works |
+| --- | --- | --- |
+| The endless card stream | Instagram/TikTok | A feed has no finish line — "the next one" is always one flick away, so play never hits a natural stop |
+| Variable-ratio rarity | Slot machines / gacha | Every card pays something; the brain keeps re-arming for the big one |
+| The unwrap ritual | Candy Crush Sugar Crush / gacha pulls | Dopamine peaks BEFORE the reveal — the shake is the product, the reveal is the receipt |
+| Near-miss gold flash | Skinner boxes / modern gacha | "SO CLOSE" is the strongest known re-grip in game design |
+| HEAT meter | Hype/train meters (Brawl Stars, TikTok streaks) | Momentum you can SEE; full meter = a guaranteed MEGA card |
+| Pity counter | Gacha pity systems (Genshin) | Dry spells always end; hope never does |
+| Affinity ("Leo picked this for you") | Recommender systems | The feed LEARNS which friends the kid loves and leans toward them |
+| Wall of Fame | Trading-card albums / Pokédex | Completion pull with visible faces nagging from the gaps |
+| Daily MEGA gift | Duolingo / daily-shop FOMO | The reason to open the app again tomorrow |
+
+There is no text to read anywhere in the loop: icons, colours and
+animation carry it. The "algorithm" wink is the chip on every card:
+*Leo picked this for you.*
+
+### 16.2 The math (lib/feed.ts)
+
+- **Rarity table** (variable ratio, same ladder as Leo Eggs):
+  common 55% · rare 25% · epic 13% · legend 5.5% · mythic 1.5%.
+- **Streak luck**: −0.5 percentage points off the roll per streak day
+  (cap 10) — a longer flame bends the table toward shiny, so the lion
+  app and the feed pull in the same direction.
+- **Near-miss**: a common that rolled <3 points under the epic/legend/
+  mythic gate flashes gold mid-shake (65% of qualifying rolls — honest
+  but noisy, pattern-hunger needs variety).
+- **Pity**: `feedPity` counts cards since the last epic+; at
+  `PITY_MAX = 9` the next card is forced epic-or-better. Dots are always
+  visible under the card.
+- **HEAT**: shiny reveals +1 heat (commons keep the warmth), at
+  `HEAT_MAX = 5` the NEXT card is a MEGA card — forced epic+ — and the
+  meter cools to 0. Best heat is kept in `feedBestHeat` for the
+  achievement.
+- **Affinity** (the recommender): every sighting multiplies that
+  friend's pull weight by `AFFINITY_STEP = 1.35`, capped ×6 — favourites
+  recur, but rarity is always governed by the table above, so love
+  never becomes a monopoly.
+- **Payouts**: rarity XP 2/3/5/10/20 through `addXp` (daily ring, league,
+  streak, quests — a pull IS a played day); duplicates pay Spark into
+  the same purse Leo Eggs uses (2/5/12/30/60 + 5 for a first discovery).
+- **Daily MEGA gift**: one free forced-epic+ card per local day
+  (`feedMegaDay`), +10 XP on claim — the Home card pulses when it waits.
+- **Comeback warmth**: `comebackLuck` reads `feedPullDay` and adds up to
+  +8 luck after days away.
+
+### 16.3 The ritual (FeedGame.tsx)
+
+The unwrap is a **GSAP timeline**: the card wobbles harder and faster
+(amplitude 2→9 px, ~130 ms per beat), a radial glow breathes in the
+rarity colour, and the ritual lasts longer for higher rarity
+(0.85 s common → 2.4 s mythic) — anticipation scales with reward.
+A near-miss flashes "SO CLOSE!" at peak tension. The reveal pops with a
+spring, pays its XP/Spark chips, and legend/mythic pull Leo on screen
+with a fanfare / golden roar. Swipe up (or NEXT) flicks the card away
+and the next one rises from below — with the edge of the card after it
+peeking at the bottom, the infinite-scroll affordance.
+
+`FeedSky` (three.js) drifts a real 3D galaxy behind the cards —
+200-point dust field + 14 spinning octahedron stars and icosahedron
+gems, DPR capped at 1.5, render loop paused when the tab hides,
+everything disposed on unmount. three.js and GSAP both ride in lazy
+chunks; phones never download them until the feed opens.
+
+### 16.4 Integration — the ONE economy (store v7)
+
+`trackFeed(plan)` is ONE pure pipeline built from a single snapshot:
+Wall of Fame (`feedAlbum`), affinity (`feedAffinity`), heat (`feedHeat`
+/ `feedBestHeat`), pity (`feedPity`), pulls (`feedPulls`, `feedPullDay`),
+Spark (`eggStars` — the shared purse), the quests (`pulls` / `feedNew` /
+`feedRare` joined the SAME 3-row daily board) and the rarity XP through
+`addXpPure` — so streaks, leagues, the daily ring and player levels all
+advance while the kid "just plays". Achievements: First Swipe · Feed on
+Fire · Golden Feed · Feed Dreamer · Feed Explorer (6) · Feed Master
+(all 16).
+
+### 16.5 The pattern question is gone
+
+The old "What comes next in the pattern?" mini-game (the square-#9b5de5
+screen) is deleted from the question factory, the play screen and both
+simulation scripts. A four-year-old never has to parse an abstract
+sequence again — pattern-hunting moved to where it belongs: the feed,
+where the pattern is "maybe THIS one is the golden one".

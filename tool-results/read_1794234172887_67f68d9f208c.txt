@@ -1,0 +1,907 @@
+     1→/**
+     2→ * Think Leo — Save State v4 (zustand + localStorage)
+     3→ * ─────────────────────────────────────────────────
+     4→ * Offline-first: the whole save lives on the kid's device.
+     5→ * Schema + hearts-regen, streak, quest and achievement math are
+     6→ * documented in docs/ALGORITHM.md §6–7 and §13.
+     7→ *
+     8→ * ENGINE RULES (v3 — after the great wipe-bug of v2):
+     9→ *  · Every helper is PURE: it takes a state snapshot and returns a new one.
+    10→ *    No helper ever re-reads `get()` mid-transaction — that is exactly what
+    11→ *    used to wipe stars the millisecond they were recorded.
+    12→ *  · The quest board is ALWAYS the length of questsForDay(today) (3 rows,
+    13→ *    distinct events) — a mismatch only happens on a genuine day rollover.
+    14→ *  · Any XP grant or finished run counts as "played today": the streak,
+    15→ *    playDays strip and daily ring can never disagree with each other.
+    16→ *
+    17→ * V4 — "levels must always end":
+    18→ *  · `done[levelIdx]` records ANY finished run (0 stars or practice too),
+    19→ *    so finishing a level always opens the next one;
+    20→ *  · `boostDay` powers Leo's courage boost (one free full refill per day),
+    21→ *    so a kid with 0 hearts is never stuck waiting;
+    22→ *  · heart regen is 8 min (was 15) — kids wait badly.
+    23→ *
+    24→ * V5 — Leo Pop (the arcade) joins the ONE economy:
+    25→ *  · merge XP flows through addXp like every other grant — leagues,
+    26→ *    streaks, the daily ring and the quest board all stay in sync;
+    27→ *  · the Zoo Book (mergeDiscoveries) is a collection, not a currency;
+    28→ *  · the daily egg (mergeEggDay) is the comeback hook for the arcade.
+    29→ *
+    30→ * V6 — LEO EGGS (the surprise-egg arcade) joins the same ONE economy:
+    31→ *  · every hatch pays rarity XP through the same pipe (daily ring,
+    32→ *    league, streak, quests) and duplicate stars into its own purse;
+    33→ *  · the egg bag is a collection with memory (count + evolved stage);
+    34→ *  · the nest (eggNestAt) is the real-time comeback engine — it keeps
+    35→ *    incubating while the app is closed;
+    36→ *  · the pity counter (eggPity) guarantees rare-or-better every 8
+    37→ *    free Spark eggs — losing streaks always end.
+    38→ */
+    39→
+    40→import { create } from "zustand";
+    41→import { createJSONStorage, persist } from "zustand/middleware";
+    42→import { useEffect, useState } from "react";
+    43→import {
+    44→  ACH_DEFINITIONS,
+    45→  BOOST_XP,
+    46→  CHEST_REWARDS,
+    47→  QUEST_ALL_DONE_BONUS,
+    48→  dayKey,
+    49→  daysBetween,
+    50→  HEART_REGEN_MS,
+    51→  leagueOf,
+    52→  MAX_HEARTS,
+    53→  playerLevelFromXp,
+    54→  questsForDay,
+    55→  weekKey,
+    56→  yesterdayKey,
+    57→  type AchDef,
+    58→} from "./game";
+    59→import { LEO_TIER, ZOO_TARGET } from "./arcade";
+    60→import {
+    61→  COLLECTION_TARGET,
+    62→  CRITTERS,
+    63→  CRITTERS_BY_UID,
+    64→  EGG_DISCOVERY_STARS,
+    65→  GROW_COPIES,
+    66→  GROW_SPEND,
+    67→  GROW_XP,
+    68→  RARITY_META,
+    69→  isRarePlus,
+    70→  nestState,
+    71→  type EggPlan,
+    72→  type NestState,
+    73→} from "./eggs";
+    74→
+    75→export interface LeoSave {
+    76→  xp: number;
+    77→  weekXp: number;
+    78→  leagueWeek: string;
+    79→  hearts: number;
+    80→  heartsAt: number; // ms epoch of the last heart-regen boundary
+    81→  refills: number; // refill tokens from world chests
+    82→  streak: number;
+    83→  bestStreak: number;
+    84→  lastPlayDay: string;
+    85→  freezes: number; // streak freezes earned at milestones
+    86→  todayXp: number;
+    87→  today: string;
+    88→  stars: Record<number, number>; // levelIdx -> best stars
+    89→  best: Record<number, number>; // levelIdx -> best score
+    90→  done: Record<number, boolean>; // levelIdx -> finished at least once (any result)
+    91→  chests: Record<number, boolean>; // worldId -> claimed
+    92→  soundSfx: boolean;
+    93→  soundMusic: boolean;
+    94→  boostDay: string; // day Leo's courage boost (free full refill) was used
+    95→  totalCorrect: number;
+    96→  runs: number;
+    97→  /* retention systems */
+    98→  playDays: string[]; // last ~30 local days that earned XP (streak strip)
+    99→  questDay: string;
+   100→  questProgress: number[];
+   101→  questClaimed: boolean[];
+   102→  questAllBonusDay: string; // day the finish-all-quests chest was claimed
+   103→  ach: string[]; // unlocked achievement ids
+   104→  seenPlayerLevel: number;
+   105→  comebackDay: string; // day the last welcome-back gift was claimed
+   106→  /* LEO POP — the arcade (v5) */
+   107→  mergeBest: number; // best Leo Pop score
+   108→  mergeDiscoveries: Record<number, number>; // tier -> times fused (the Zoo Book)
+   109→  mergeEggDay: string; // day the guaranteed daily egg was dropped
+   110→  mergePlays: number; // Leo Pop runs finished
+   111→  totalMerges: number; // lifetime fusions
+   112→  /* LEO EGGS — the surprise-egg arcade (v6) */
+   113→  eggStars: number; // the egg purse (duplicates pay in)
+   114→  eggBag: Record<string, { count: number; evolved: boolean }>; // uid -> collection entry
+   115→  eggHatched: number; // lifetime cracks
+   116→  eggPity: number; // dry Spark eggs since the last rare-or-better
+   117→  eggNestAt: number; // ms epoch the free nest egg started incubating (0 = ready)
+   118→  eggRoyalDay: string; // day the free daily Royal Egg was claimed
+   119→  _hydrated: boolean;
+   120→}
+   121→
+   122→export interface LeoActions {
+   123→  tickHearts: () => void;
+   124→  loseHeart: () => void;
+   125→  useRefill: () => boolean;
+   126→  addXp: (n: number) => void;
+   127→  /** Any finished run counts the day for streak/playDays — even 0 stars. */
+   128→  noteActivity: () => void;
+   129→  trackAnswer: (correct: boolean) => void;
+   130→  trackCombo: (n: number) => void;
+   131→  trackRush: (hits: number) => void;
+   132→  recordLevel: (levelIdx: number, stars: number, score: number) => void;
+   133→  grantChest: (worldId: number) => void;
+   134→  /** Leo's courage boost: one free full refill per local day. */
+   135→  claimBoost: () => boolean;
+   136→  boostReady: () => boolean;
+   137→  claimQuest: (i: number) => boolean;
+   138→  claimQuestBonus: () => boolean;
+   139→  claimComeback: () => boolean;
+   140→  /** Leo Pop: one fusion — updates the Zoo Book, quests + achievements.
+   141→   *  Returns true when this tier was discovered for the FIRST time. */
+   142→  trackMerge: (tier: number, chain: number) => boolean;
+   143→  /** Leo Pop: a finished run — best score, play counter, day credit. */
+   144→  recordMergeRun: (score: number) => void;
+   145→  /** Leo Pop: the guaranteed daily egg just dropped. Returns true when it
+   146→   *  was actually claimed (only then does the +5 XP pay out). */
+   147→  claimMergeEgg: () => boolean;
+   148→  /** Leo Pop: a creature SEEN for the first time (dropped/hatched — not
+   149→   *  fused). Registers the Zoo Book + the discovery quest, no merge count. */
+   150→  seeCreature: (tier: number) => boolean;
+   151→  /** Leo Eggs: one crack resolved — bag, star payout, rarity XP, pity,
+   152→   *  quests and achievements in ONE pipeline. `nest` restarts the
+   153→   *  real-time incubation when the free nest egg was the one cracked. */
+   154→  trackEgg: (plan: EggPlan, opts: { nest?: boolean }) => { gainedStars: number; xp: number };
+   155→  /** Leo Eggs: claim today's free Royal Egg (the morning trigger). */
+   156→  claimRoyalEgg: () => boolean;
+   157→  /** Leo Eggs: pay stars for a Rainbow/Royal egg. False when too poor. */
+   158→  spendEggStars: (n: number) => boolean;
+   159→  /** Leo Eggs: feed GROW_SPEND duplicate copies to grow a friend to
+   160→   *  Stage 2 (pride only — same art, golden frame). */
+   161→  evolveCritter: (uid: string) => boolean;
+   162→  pendingAch: AchDef[];
+   163→  dismissAch: () => void;
+   164→  levelUpPulse: number; // increments on every new player level (UI trigger)
+   165→  toggleSfx: () => void;
+   166→  toggleMusic: () => void;
+   167→  reset: () => void;
+   168→}
+   169→
+   170→export type LeoStore = LeoSave & LeoActions;
+   171→
+   172→const DEFAULT_SAVE: LeoSave = {
+   173→  xp: 0,
+   174→  weekXp: 0,
+   175→  leagueWeek: weekKey(),
+   176→  hearts: MAX_HEARTS,
+   177→  heartsAt: Date.now(),
+   178→  refills: 1,
+   179→  streak: 0,
+   180→  bestStreak: 0,
+   181→  lastPlayDay: "",
+   182→  freezes: 0,
+   183→  todayXp: 0,
+   184→  today: dayKey(),
+   185→  stars: {},
+   186→  best: {},
+   187→  done: {},
+   188→  chests: {},
+   189→  soundSfx: true,
+   190→  soundMusic: true,
+   191→  boostDay: "",
+   192→  totalCorrect: 0,
+   193→  runs: 0,
+   194→  playDays: [],
+   195→  questDay: "",
+   196→  questProgress: [],
+   197→  questClaimed: [],
+   198→  questAllBonusDay: "",
+   199→  ach: [],
+   200→  seenPlayerLevel: 1,
+   201→  comebackDay: "",
+   202→  mergeBest: 0,
+   203→  mergeDiscoveries: {},
+   204→  mergeEggDay: "",
+   205→  mergePlays: 0,
+   206→  totalMerges: 0,
+   207→  eggStars: 10, // a starter purse — almost a Rainbow Egg for the curious
+   208→  eggBag: {},
+   209→  eggHatched: 0,
+   210→  eggPity: 0,
+   211→  eggNestAt: 0, // first visit: the nest is already warm
+   212→  eggRoyalDay: "",
+   213→  _hydrated: false,
+   214→};
+   215→
+   216→/* ══════════════════ pure state helpers (no get(), ever) ══════════ */
+   217→
+   218→/** Distinct egg friends discovered (bag keys that are real critters). */
+   219→function eggDistinct(s: LeoSave): number {
+   220→  return Object.keys(s.eggBag).filter((k) => CRITTERS_BY_UID[k]).length;
+   221→}
+   222→
+   223→/** A fresh, empty quest board for today. */
+   224→function freshBoard(today: string): Pick<LeoSave, "questDay" | "questProgress" | "questClaimed"> {
+   225→  const board = questsForDay(today);
+   226→  return {
+   227→    questDay: today,
+   228→    questProgress: board.map(() => 0),
+   229→    questClaimed: board.map(() => false),
+   230→  };
+   231→}
+   232→
+   233→/** Rebase the snapshot onto today's board if (and only if) it is stale. */
+   234→function ensureQuestDay(s: LeoSave): LeoSave {
+   235→  const today = dayKey();
+   236→  const boardLen = questsForDay(today).length;
+   237→  if (s.questDay === today && s.questProgress.length === boardLen) return s;
+   238→  return { ...s, ...freshBoard(today) };
+   239→}
+   240→
+   241→/** Bump every quest listening to `event`. `max` mode keeps the highest value. */
+   242→function bumpQuests(
+   243→  sBase: LeoSave,
+   244→  event: string,
+   245→  n: number,
+   246→  mode: "add" | "max" = "add"
+   247→): LeoSave {
+   248→  const s = ensureQuestDay(sBase); // preserves every field of sBase
+   249→  const board = questsForDay(s.questDay);
+   250→  const progress = [...s.questProgress];
+   251→  board.forEach((q, i) => {
+   252→    if (q.event !== event) return;
+   253→    progress[i] = mode === "max" ? Math.max(progress[i] ?? 0, n) : (progress[i] ?? 0) + n;
+   254→  });
+   255→  return { ...s, questProgress: progress };
+   256→}
+   257→
+   258→/** The day counter: streak, best streak, freezes and the playDays strip. */
+   259→function bumpPlayDay(s0: LeoSave): LeoSave {
+   260→  const today = dayKey();
+   261→  let streak = s0.streak;
+   262→  let freezes = s0.freezes;
+   263→  let lastPlayDay = s0.lastPlayDay;
+   264→
+   265→  if (lastPlayDay !== today) {
+   266→    // 999 = first-ever play (no yesterday to chain from)
+   267→    const gap = lastPlayDay ? daysBetween(lastPlayDay, today) : 999;
+   268→    if (gap === 1) {
+   269→      streak += 1; // yesterday → today: the streak lives
+   270→    } else if (gap === 2 && freezes > 0 && streak > 0) {
+   271→      freezes -= 1; // a streak freeze silently saved the streak
+   272→      streak += 1;
+   273→    } else {
+   274→      streak = 1; // fresh start or first ever — kindly begin at 1
+   275→    }
+   276→    lastPlayDay = today;
+   277→  }
+   278→  if (streak === 3) freezes += 1; // milestone: earn a freeze
+   279→  if (streak === 7) freezes += 2;
+   280→
+   281→  const playDays = s0.playDays.includes(today)
+   282→    ? s0.playDays
+   283→    : [...s0.playDays, today].slice(-30);
+   284→
+   285→  return {
+   286→    ...s0,
+   287→    streak,
+   288→    bestStreak: Math.max(s0.bestStreak, streak),
+   289→    freezes,
+   290→    lastPlayDay,
+   291→    playDays,
+   292→    today,
+   293→  };
+   294→}
+   295→
+   296→/** XP plumbing without side effects on achievements (they call it too). */
+   297→function addXpPure(s0: LeoSave, n: number): { save: LeoSave; leveledTo: number | null } {
+   298→  const today = dayKey();
+   299→  const wk = weekKey();
+   300→  const played = bumpPlayDay(s0);
+   301→
+   302→  const xp = played.xp + n;
+   303→  const todayXp = played.today === today ? played.todayXp + n : n;
+   304→  const newLvl = playerLevelFromXp(xp);
+   305→  const leveledTo = newLvl > s0.seenPlayerLevel ? newLvl : null;
+   306→
+   307→  return {
+   308→    save: {
+   309→      ...played,
+   310→      xp,
+   311→      todayXp,
+   312→      today,
+   313→      weekXp: played.leagueWeek === wk ? played.weekXp + n : n,
+   314→      leagueWeek: wk,
+   315→      seenPlayerLevel: leveledTo ?? played.seenPlayerLevel,
+   316→    },
+   317→    leveledTo,
+   318→  };
+   319→}
+   320→
+   321→/** Evaluate one-shot achievements against a snapshot. Pure. */
+   322→function checkAchievements(snapshot: LeoSave): { save: LeoSave; unlocked: AchDef[] } {
+   323→  const s = snapshot;
+   324→  const starLevels = Object.values(s.stars).filter((v) => v > 0).length;
+   325→  const chestCount = Object.values(s.chests).filter(Boolean).length;
+   326→  const league = leagueOf(s.weekXp);
+   327→
+   328→  const conditions: Record<string, boolean> = {
+   329→    firstStar: starLevels >= 1,
+   330→    flawless: Object.values(s.stars).some((v) => v >= 3),
+   331→    streak3: s.streak >= 3,
+   332→    streak7: s.streak >= 7,
+   333→    streak14: s.streak >= 14,
+   334→    trail10: starLevels >= 10,
+   335→    collector25: starLevels >= 25,
+   336→    champion40: starLevels >= 40,
+   337→    century: s.totalCorrect >= 100,
+   338→    megamind: s.totalCorrect >= 500,
+   339→    hunter: chestCount >= 2,
+   340→    rising5: playerLevelFromXp(s.xp) >= 5,
+   341→    legendLeague: league.index >= 3,
+   342→    // Leo Pop
+   343→    mergeLeo: (s.mergeDiscoveries[LEO_TIER] ?? 0) >= 1,
+   344→    zooAll: Object.keys(s.mergeDiscoveries).filter((k) => Number(k) < ZOO_TARGET).length >= ZOO_TARGET,
+   345→    // Leo Eggs
+   346→    eggFirst: s.eggHatched >= 1,
+   347→    eggExplorer: eggDistinct(s) >= 6,
+   348→    eggMaster: eggDistinct(s) >= COLLECTION_TARGET,
+   349→    eggLegend: CRITTERS.some((c) => (c.rarity === "legend" || c.rarity === "mythic") && (s.eggBag[c.uid]?.count ?? 0) >= 1),
+   350→    eggEvolve: Object.values(s.eggBag).some((c) => c.evolved),
+   351→  };
+   352→
+   353→  const unlocked: AchDef[] = [];
+   354→  let bonusXp = 0;
+   355→  for (const [id, cond] of Object.entries(conditions)) {
+   356→    if (cond && !s.ach.includes(id)) {
+   357→      const def = ACH_DEFINITIONS[id];
+   358→      if (def) {
+   359→        unlocked.push(def);
+   360→        bonusXp += def.xp;
+   361→      }
+   362→    }
+   363→  }
+   364→  if (unlocked.length === 0) return { save: s, unlocked: [] };
+   365→  // ids added first → no recursion; XP flows through the same pipe as every
+   366→  // other grant (level math AND the daily "Earn XP" quest stay in sync)
+   367→  const withIds = { ...s, ach: [...s.ach, ...unlocked.map((a) => a.id)] };
+   368→  const added = addXpPure(withIds, bonusXp);
+   369→  const quested = bumpQuests(added.save, "xp", bonusXp);
+   370→  return { save: quested, unlocked };
+   371→}
+   372→
+   373→/* ══════════════════════════ the store ════════════════════════════ */
+   374→
+   375→export const useLeo = create<LeoStore>()(
+   376→  persist(
+   377→    (set, get) => ({
+   378→      ...DEFAULT_SAVE,
+   379→
+   380→      tickHearts: () => {
+   381→        const s = get();
+   382→        if (s.hearts >= MAX_HEARTS) {
+   383→          if (s.heartsAt !== 0) set({ heartsAt: Date.now() });
+   384→          return;
+   385→        }
+   386→        const now = Date.now();
+   387→        const gained = Math.floor((now - s.heartsAt) / HEART_REGEN_MS);
+   388→        if (gained > 0) {
+   389→          const hearts = Math.min(MAX_HEARTS, s.hearts + gained);
+   390→          set({
+   391→            hearts,
+   392→            heartsAt: hearts >= MAX_HEARTS ? now : s.heartsAt + gained * HEART_REGEN_MS,
+   393→          });
+   394→        }
+   395→      },
+   396→
+   397→      loseHeart: () => {
+   398→        const s = get();
+   399→        if (s.hearts <= 0) return;
+   400→        const wasFull = s.hearts >= MAX_HEARTS;
+   401→        set({
+   402→          hearts: s.hearts - 1,
+   403→          heartsAt: wasFull ? Date.now() : s.heartsAt,
+   404→        });
+   405→      },
+   406→
+   407→      useRefill: () => {
+   408→        const s = get();
+   409→        if (s.refills <= 0 || s.hearts >= MAX_HEARTS) return false;
+   410→        set({ refills: s.refills - 1, hearts: MAX_HEARTS, heartsAt: Date.now() });
+   411→        return true;
+   412→      },
+   413→
+   414→      /**
+   415→       * XP always flows through here: it feeds the daily goal ring,
+   416→       * the quest board, the weekly league, the streak and the player
+   417→       * level — one currency, many meters (the Duolingo trick, §2).
+   418→       */
+   419→      addXp: (n) => {
+   420→        const base = ensureQuestDay(get());
+   421→        const quested = bumpQuests(base, "xp", n);
+   422→        const { save, leveledTo } = addXpPure(quested, n);
+   423→        const { save: finalSave, unlocked } = checkAchievements(save);
+   424→        set({
+   425→          ...finalSave,
+   426→          levelUpPulse: get().levelUpPulse + (leveledTo ? 1 : 0),
+   427→          pendingAch: unlocked.length ? [...get().pendingAch, ...unlocked] : get().pendingAch,
+   428→        });
+   429→      },
+   430→
+   431→      /** A finished run (any result) counts today as played. */
+   432→      noteActivity: () => {
+   433→        set(bumpPlayDay(ensureQuestDay(get())));
+   434→      },
+   435→
+   436→      trackAnswer: (correct) => {
+   437→        const base = ensureQuestDay(get());
+   438→        const quested = correct ? bumpQuests(base, "correct", 1) : base;
+   439→        const withCount: LeoSave = correct
+   440→          ? { ...quested, totalCorrect: quested.totalCorrect + 1 }
+   441→          : quested;
+   442→        set(withCount);
+   443→        if (correct) {
+   444→          const { save, unlocked } = checkAchievements(get());
+   445→          if (unlocked.length) {
+   446→            set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
+   447→          }
+   448→        }
+   449→      },
+   450→
+   451→      trackCombo: (n) => {
+   452→        const base = ensureQuestDay(get());
+   453→        set(bumpQuests(base, "maxcombo", n, "max"));
+   454→        if (n >= 10 && !get().ach.includes("combo10")) {
+   455→          const def = ACH_DEFINITIONS.combo10;
+   456→          const withAch = { ...get(), ach: [...get().ach, "combo10"] };
+   457→          const { save } = addXpPure(withAch, def.xp);
+   458→          set({ ...bumpQuests(save, "xp", def.xp), pendingAch: [...get().pendingAch, def] });
+   459→        }
+   460→      },
+   461→
+   462→      trackRush: (hits) => {
+   463→        const base = ensureQuestDay(get());
+   464→        set(bumpQuests(base, "rushhits", hits, "max"));
+   465→        if (hits >= 12 && !get().ach.includes("rushAce")) {
+   466→          const def = ACH_DEFINITIONS.rushAce;
+   467→          const withAch = { ...get(), ach: [...get().ach, "rushAce"] };
+   468→          const { save } = addXpPure(withAch, def.xp);
+   469→          set({ ...bumpQuests(save, "xp", def.xp), pendingAch: [...get().pendingAch, def] });
+   470→        }
+   471→      },
+   472→
+   473→      /**
+   474→       * Records a finished level — ANY finished run (v4): best stars, best
+   475→       * score, `done` flag (so the next level always opens), run counter,
+   476→       * first-clear quest bumps — then achievement checks. ONE set, built
+   477→       * from a single snapshot; nothing can be wiped mid-way any more.
+   478→       */
+   479→      recordLevel: (levelIdx, stars, score) => {
+   480→        const s0 = ensureQuestDay(get());
+   481→        const prevStars = s0.stars[levelIdx] ?? 0;
+   482→        const prevBest = s0.best[levelIdx] ?? 0;
+   483→        const firstClear = prevStars === 0 && stars > 0;
+   484→
+   485→        let s: LeoSave = {
+   486→          ...s0,
+   487→          stars: { ...s0.stars, [levelIdx]: Math.max(prevStars, stars) },
+   488→          best: { ...s0.best, [levelIdx]: Math.max(prevBest, score) },
+   489→          done: { ...s0.done, [levelIdx]: true },
+   490→          runs: s0.runs + 1,
+   491→        };
+   492→        if (firstClear) {
+   493→          s = bumpQuests(s, "levels", 1);
+   494→          if (stars >= 3) s = bumpQuests(s, "stars3", 1);
+   495→        }
+   496→        set(s);
+   497→
+   498→        const { save, unlocked } = checkAchievements(get());
+   499→        if (unlocked.length) {
+   500→          set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
+   501→        }
+   502→      },
+   503→
+   504→      claimBoost: () => {
+   505→        const s = get();
+   506→        const today = dayKey();
+   507→        if (s.boostDay === today || s.hearts >= MAX_HEARTS) return false;
+   508→        set({
+   509→          ...s,
+   510→          boostDay: today,
+   511→          hearts: MAX_HEARTS,
+   512→          heartsAt: Date.now(),
+   513→        });
+   514→        get().addXp(BOOST_XP);
+   515→        return true;
+   516→      },
+   517→
+   518→      boostReady: () => {
+   519→        const s = get();
+   520→        return s.boostDay !== dayKey() && s.hearts < MAX_HEARTS;
+   521→      },
+   522→
+   523→      grantChest: (worldId) => {
+   524→        const s = get();
+   525→        if (s.chests[worldId]) return;
+   526→        set({
+   527→          chests: { ...s.chests, [worldId]: true },
+   528→          refills: s.refills + CHEST_REWARDS.refills,
+   529→        });
+   530→        get().addXp(CHEST_REWARDS.xp);
+   531→      },
+   532→
+   533→      claimQuest: (i) => {
+   534→        const s = ensureQuestDay(get());
+   535→        const board = questsForDay(s.questDay);
+   536→        const q = board[i];
+   537→        if (!q) return false;
+   538→        if (s.questClaimed[i] || (s.questProgress[i] ?? 0) < q.target) return false;
+   539→        const claimed = [...s.questClaimed];
+   540→        claimed[i] = true;
+   541→        set({ ...s, questClaimed: claimed });
+   542→        get().addXp(q.rewardXp);
+   543→        return true;
+   544→      },
+   545→
+   546→      claimQuestBonus: () => {
+   547→        const s = ensureQuestDay(get());
+   548→        const board = questsForDay(s.questDay);
+   549→        const allDone = board.every(
+   550→          (q, i) => s.questClaimed[i] && (s.questProgress[i] ?? 0) >= q.target
+   551→        );
+   552→        if (!allDone || s.questAllBonusDay === s.questDay) return false;
+   553→        set({
+   554→          ...s,
+   555→          questAllBonusDay: s.questDay,
+   556→          refills: s.refills + QUEST_ALL_DONE_BONUS.refill,
+   557→        });
+   558→        get().addXp(QUEST_ALL_DONE_BONUS.xp);
+   559→        return true;
+   560→      },
+   561→
+   562→      claimComeback: () => {
+   563→        const s = get();
+   564→        const today = dayKey();
+   565→        if (s.comebackDay === today) return false;
+   566→        set({ ...s, comebackDay: today, refills: s.refills + 1 });
+   567→        get().addXp(20);
+   568→        return true;
+   569→      },
+   570→
+   571→      /* ── Leo Pop (the arcade) ─────────────────────────────────── */
+   572→
+   573→      trackMerge: (tier, chain) => {
+   574→        const s0 = ensureQuestDay(get());
+   575→        const disc = { ...s0.mergeDiscoveries };
+   576→        const isNew = !disc[tier];
+   577→        disc[tier] = (disc[tier] ?? 0) + 1;
+   578→
+   579→        let s: LeoSave = {
+   580→          ...s0,
+   581→          mergeDiscoveries: disc,
+   582→          totalMerges: s0.totalMerges + 1,
+   583→        };
+   584→        s = bumpQuests(s, "merges", 1);
+   585→        if (isNew) s = bumpQuests(s, "mergeNew", 1);
+   586→        if (tier === LEO_TIER) s = bumpQuests(s, "mergeLeo", 1);
+   587→        set(s);
+   588→
+   589→        // direct-unlock achievements (same pattern as combo10 / rushAce)
+   590→        const unlock = (id: string, cond: boolean) => {
+   591→          if (!cond || get().ach.includes(id)) return;
+   592→          const def = ACH_DEFINITIONS[id];
+   593→          if (!def) return;
+   594→          const withAch: LeoSave = { ...get(), ach: [...get().ach, id] };
+   595→          const { save } = addXpPure(withAch, def.xp);
+   596→          set({ ...bumpQuests(save, "xp", def.xp), pendingAch: [...get().pendingAch, def] });
+   597→        };
+   598→        unlock("mergeLeo", tier === LEO_TIER);
+   599→        unlock("mergeChain5", chain >= 5);
+   600→
+   601→        if (isNew) {
+   602→          const { save, unlocked } = checkAchievements(get());
+   603→          if (unlocked.length) {
+   604→            set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
+   605→          }
+   606→        }
+   607→        return isNew;
+   608→      },
+   609→
+   610→      recordMergeRun: (score) => {
+   611→        const s0 = ensureQuestDay(get());
+   612→        set({
+   613→          ...s0,
+   614→          mergeBest: Math.max(s0.mergeBest, score),
+   615→          mergePlays: s0.mergePlays + 1,
+   616→        });
+   617→        // Pop Star (1500 in one run) — direct unlock like combo10
+   618→        if (score >= 1500 && !get().ach.includes("mergeScore")) {
+   619→          const def = ACH_DEFINITIONS.mergeScore;
+   620→          const withAch: LeoSave = { ...get(), ach: [...get().ach, "mergeScore"] };
+   621→          const { save } = addXpPure(withAch, def.xp);
+   622→          set({ ...bumpQuests(save, "xp", def.xp), pendingAch: [...get().pendingAch, def] });
+   623→        }
+   624→      },
+   625→
+   626→      claimMergeEgg: () => {
+   627→        const s = get();
+   628→        const today = dayKey();
+   629→        if (s.mergeEggDay === today) return false;
+   630→        set({ ...s, mergeEggDay: today });
+   631→        return true;
+   632→      },
+   633→
+   634→      seeCreature: (tier) => {
+   635→        const s0 = ensureQuestDay(get());
+   636→        if (s0.mergeDiscoveries[tier]) return false;
+   637→        let s: LeoSave = {
+   638→          ...s0,
+   639→          mergeDiscoveries: { ...s0.mergeDiscoveries, [tier]: 1 },
+   640→        };
+   641→        s = bumpQuests(s, "mergeNew", 1);
+   642→        set(s);
+   643→        const { save, unlocked } = checkAchievements(get());
+   644→        if (unlocked.length) {
+   645→          set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
+   646→        }
+   647→        return true;
+   648→      },
+   649→
+   650→      /* ── Leo Eggs (the surprise-egg arcade) ──────────────────── */
+   651→
+   652→      /**
+   653→       * One crack resolved. Everything an egg touches happens HERE, in
+   654→       * one pure pipeline built from a single snapshot: the bag, the
+   655→       * star purse, the pity counter, the nest restart, the rarity XP
+   656→       * (through the same addXp pipe as every other grant) and the
+   657→       * egg quests. Achievements are checked once, at the end.
+   658→       */
+   659→      trackEgg: (plan, opts) => {
+   660→        const s0 = ensureQuestDay(get());
+   661→        const uid = plan.critter.uid;
+   662→        const cur = s0.eggBag[uid];
+   663→        const bag: LeoSave["eggBag"] = {
+   664→          ...s0.eggBag,
+   665→          [uid]: { count: (cur?.count ?? 0) + 1, evolved: cur?.evolved ?? false },
+   666→        };
+   667→        const gainedStars = plan.dupeStars + (plan.isNew ? EGG_DISCOVERY_STARS : 0);
+   668→        const xp = RARITY_META[plan.rarity].xp;
+   669→
+   670→        let s: LeoSave = {
+   671→          ...s0,
+   672→          eggBag: bag,
+   673→          eggStars: s0.eggStars + gainedStars,
+   674→          eggHatched: s0.eggHatched + 1,
+   675→          // pity guards only the free Spark egg — paid eggs are their own guarantee
+   676→          eggPity: plan.kind === "spark" ? (plan.pityReset ? 0 : s0.eggPity + 1) : s0.eggPity,
+   677→          // the nest immediately starts incubating the next free egg
+   678→          eggNestAt: opts.nest ? Date.now() : s0.eggNestAt,
+   679→        };
+   680→        s = bumpQuests(s, "eggs", 1);
+   681→        if (plan.isNew) s = bumpQuests(s, "eggNew", 1);
+   682→        if (isRarePlus(plan.rarity)) s = bumpQuests(s, "eggRare", 1);
+   683→        const { save: xped } = addXpPure(s, xp);
+   684→        s = bumpQuests(xped, "xp", xp);
+   685→        set(s);
+   686→
+   687→        const { save, unlocked } = checkAchievements(get());
+   688→        if (unlocked.length) {
+   689→          set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
+   690→        }
+   691→        return { gainedStars, xp };
+   692→      },
+   693→
+   694→      claimRoyalEgg: () => {
+   695→        const s = get();
+   696→        const today = dayKey();
+   697→        if (s.eggRoyalDay === today) return false;
+   698→        set({ ...s, eggRoyalDay: today });
+   699→        return true;
+   700→      },
+   701→
+   702→      spendEggStars: (n) => {
+   703→        const s = get();
+   704→        if (s.eggStars < n) return false;
+   705→        set({ eggStars: s.eggStars - n });
+   706→        return true;
+   707→      },
+   708→
+   709→      evolveCritter: (uid) => {
+   710→        const s0 = ensureQuestDay(get());
+   711→        const cur = s0.eggBag[uid];
+   712→        if (!cur || cur.evolved || cur.count < GROW_COPIES) return false;
+   713→        set({
+   714→          ...s0,
+   715→          eggBag: {
+   716→            ...s0.eggBag,
+   717→            [uid]: { count: cur.count - GROW_SPEND, evolved: true },
+   718→          },
+   719→        });
+   720→        get().addXp(GROW_XP); // quest + league + achievements in one pipe
+   721→        const { save, unlocked } = checkAchievements(get());
+   722→        if (unlocked.length) {
+   723→          set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
+   724→        }
+   725→        return true;
+   726→      },
+   727→
+   728→      pendingAch: [],
+   729→      dismissAch: () => set({ pendingAch: get().pendingAch.slice(1) }),
+   730→      levelUpPulse: 0,
+   731→
+   732→      toggleSfx: () => set({ soundSfx: !get().soundSfx }),
+   733→      toggleMusic: () => set({ soundMusic: !get().soundMusic }),
+   734→
+   735→      reset: () => set({ ...DEFAULT_SAVE, _hydrated: true, pendingAch: [], levelUpPulse: 0 }),
+   736→    }),
+   737→    {
+   738→      name: "think-leo-save-v1",
+   739→      version: 6,
+   740→      storage: createJSONStorage(() => localStorage),
+   741→      partialize: (s) => {
+   742→        const { _hydrated, pendingAch, levelUpPulse, ...rest } = s;
+   743→        void _hydrated;
+   744→        void pendingAch;
+   745→        void levelUpPulse;
+   746→        return rest as LeoStore;
+   747→      },
+   748→      migrate: (persisted, version) => {
+   749→        const p = (persisted ?? {}) as Partial<LeoSave>;
+   750→        // v2 saves carry XP from the inflated economy (score/12 per run — one
+   751→        // run could mint 700+ XP and skip three leagues). Rescale to the v3
+   752→        // curve so returning kids land in a sane state without losing progress.
+   753→        // (v3+ saves were already rescaled — never touch their XP again.)
+   754→        const scale = version < 3 ? 12 : 1;
+   755→        const xp = Math.round((p.xp ?? 0) / scale);
+   756→        const weekXp = Math.round((p.weekXp ?? 0) / scale);
+   757→        // v4: backfill `done` from stars so old saves keep every unlocked door
+   758→        const done: Record<number, boolean> = {};
+   759→        Object.entries(p.stars ?? {}).forEach(([k, v]) => {
+   760→          if (v > 0) done[Number(k)] = true;
+   761→        });
+   762→        return {
+   763→          ...DEFAULT_SAVE,
+   764→          ...p,
+   765→          xp,
+   766→          weekXp,
+   767→          todayXp: Math.round((p.todayXp ?? 0) / scale),
+   768→          hearts: Math.max(p.hearts ?? MAX_HEARTS, 3), // arriving from a fix: be kind
+   769→          // v3: boards rebuilt under the exact-3 contract; stars/best survive
+   770→          ...freshBoard(dayKey()),
+   771→          playDays: p.playDays ?? [],
+   772→          ach: p.ach ?? [],
+   773→          seenPlayerLevel: playerLevelFromXp(xp),
+   774→          comebackDay: "",
+   775→          done: { ...done, ...(p.done ?? {}) },
+   776→          boostDay: p.boostDay ?? "",
+   777→          // v5: the arcade fields (older saves simply start their zoo fresh)
+   778→          mergeBest: p.mergeBest ?? 0,
+   779→          mergeDiscoveries: p.mergeDiscoveries ?? {},
+   780→          mergeEggDay: p.mergeEggDay ?? "",
+   781→          mergePlays: p.mergePlays ?? 0,
+   782→          totalMerges: p.totalMerges ?? 0,
+   783→          // v6: the egg fields (a warm nest + a starter purse for everyone)
+   784→          eggStars: p.eggStars ?? 10,
+   785→          eggBag: p.eggBag ?? {},
+   786→          eggHatched: p.eggHatched ?? 0,
+   787→          eggPity: p.eggPity ?? 0,
+   788→          eggNestAt: p.eggNestAt ?? 0,
+   789→          eggRoyalDay: p.eggRoyalDay ?? "",
+   790→        };
+   791→      },
+   792→      /**
+   793→       * Hydration merge — THE hydration flag lives here, not in
+   794→       * onRehydrateStorage. Why: that callback runs while `create()` is
+   795→       * still executing, so referencing `useLeo` inside it dies in the
+   796→       * temporal dead zone (an error persist swallows silently). That
+   797→       * bug shipped unnoticed for weeks: `_hydrated` never turned true,
+   798→       * so the welcome-back gift and the quick splash never ran. The
+   799→       * merge runs for every hydration (stored or fresh) and simply
+   800→       * stamps the flag — no store reference needed.
+   801→       */
+   802→      merge: (persisted, current) =>
+   803→        ({
+   804→          ...current,
+   805→          ...(persisted as Partial<LeoSave>),
+   806→          _hydrated: true,
+   807→        }) as LeoStore,
+   808→      onRehydrateStorage: () => (state) => {
+   809→        state?.tickHearts();
+   810→      },
+   811→    }
+   812→  )
+   813→);
+   814→
+   815→/* e2e/debug hook — lets test harnesses (and the curious) inspect the save
+   816→   engine: window.__leoStore.getState().mergeDiscoveries, … */
+   817→if (typeof window !== "undefined") {
+   818→  (window as unknown as { __leoStore?: typeof useLeo }).__leoStore = useLeo;
+   819→}
+   820→
+   821→/** Convenience selector: hearts display never needs manual math. */
+   822→export function useHearts(): { hearts: number; max: number; nextInMin: number } {
+   823→  const hearts = useLeo((s) => s.hearts);
+   824→  const heartsAt = useLeo((s) => s.heartsAt);
+   825→  const tick = useLeo((s) => s.tickHearts);
+   826→  // light polling keeps regen honest while the tab is open
+   827→  useEffect(() => {
+   828→    const id = window.setInterval(tick, 5000);
+   829→    return () => window.clearInterval(id);
+   830→  }, [tick]);
+   831→  if (hearts >= MAX_HEARTS) return { hearts, max: MAX_HEARTS, nextInMin: 0 };
+   832→  const nextIn = Math.max(
+   833→    0,
+   834→    Math.ceil((heartsAt + HEART_REGEN_MS - Date.now()) / 60000)
+   835→  );
+   836→  return { hearts, max: MAX_HEARTS, nextInMin: nextIn };
+   837→}
+   838→
+   839→/** Today's quest board + progress (safe during hydration). */
+   840→export function useQuests() {
+   841→  const questDay = useLeo((s) => s.questDay);
+   842→  const questProgress = useLeo((s) => s.questProgress);
+   843→  const questClaimed = useLeo((s) => s.questClaimed);
+   844→  const questAllBonusDay = useLeo((s) => s.questAllBonusDay);
+   845→  const today = dayKey();
+   846→  const board = questsForDay(today);
+   847→  const stale = questDay !== today || questProgress.length !== board.length;
+   848→  const progress = stale ? board.map(() => 0) : questProgress;
+   849→  const claimed = stale ? board.map(() => false) : questClaimed;
+   850→  const bonusReady =
+   851→    !stale &&
+   852→    questAllBonusDay !== today &&
+   853→    board.every((q, i) => claimed[i] && (progress[i] ?? 0) >= q.target);
+   854→  const allDone = board.every((q, i) => claimed[i] && (progress[i] ?? 0) >= q.target);
+   855→  return { board, progress, claimed, bonusReady, allDone, stale, today };
+   856→}
+   857→
+   858→/** Is the guaranteed daily egg still waiting in Leo Pop? */
+   859→export function useMergeEggReady(): boolean {
+   860→  const mergeEggDay = useLeo((s) => s.mergeEggDay);
+   861→  const hydrated = useLeo((s) => s._hydrated);
+   862→  if (!hydrated) return false;
+   863→  return mergeEggDay !== dayKey();
+   864→}
+   865→
+   866→/** Zoo Book progress: distinct creatures discovered (0..10) + golden flag. */
+   867→export function useZooProgress(): { found: number; target: number; golden: boolean } {
+   868→  const disc = useLeo((s) => s.mergeDiscoveries);
+   869→  const found = Object.keys(disc).filter((k) => Number(k) < ZOO_TARGET).length;
+   870→  return { found, target: ZOO_TARGET, golden: (disc[10] ?? 0) > 0 };
+   871→}
+   872→
+   873→/**
+   874→ * The nest, live: a 1s ticker that only runs while the app is open.
+   875→ * `ready` means a free egg is waiting in the nest right now — the Home
+   876→ * card and the egg game both read this one truth.
+   877→ */
+   878→export function useEggNest(): NestState & { hydrated: boolean } {
+   879→  const eggNestAt = useLeo((s) => s.eggNestAt);
+   880→  const hydrated = useLeo((s) => s._hydrated);
+   881→  const [now, setNow] = useState(() => Date.now());
+   882→  useEffect(() => {
+   883→    if (!hydrated) return;
+   884→    const id = window.setInterval(() => setNow(Date.now()), 1000);
+   885→    return () => window.clearInterval(id);
+   886→  }, [hydrated]);
+   887→  if (!hydrated) return { ready: false, pct: 0, minsLeft: 0, hydrated: false };
+   888→  return { ...nestState(eggNestAt, now), hydrated: true };
+   889→}
+   890→
+   891→/** Egg album progress: distinct friends discovered + the bag itself. */
+   892→export function useEggCollection() {
+   893→  const eggBag = useLeo((s) => s.eggBag);
+   894→  const found = Object.keys(eggBag).filter((k) => CRITTERS_BY_UID[k]).length;
+   895→  return { found, target: COLLECTION_TARGET, bag: eggBag };
+   896→}
+   897→
+   898→/** Is a welcome-back gift waiting? (2+ days away, one per comeback) */
+   899→export function useComeback(): boolean {
+   900→  const lastPlayDay = useLeo((s) => s.lastPlayDay);
+   901→  const comebackDay = useLeo((s) => s.comebackDay);
+   902→  const hydrated = useLeo((s) => s._hydrated);
+   903→  if (!hydrated || !lastPlayDay) return false;
+   904→  const today = dayKey();
+   905→  return daysBetween(lastPlayDay, today) >= 2 && comebackDay !== today;
+   906→}
+   907→

@@ -26,7 +26,6 @@ export type QKind =
   // v4 — hands-on games ("kids get to DO something", not just numbers)
   | "tapTarget" // tap every monkey in a mixed crowd — reaction + scanning
   | "shadow" // match the animal to its silhouette — visual discrimination
-  | "pattern" // colour+shape patterns — pre-math logic without digits
   | "feedLeo"; // drop exactly N snacks into Leo's bowl — counting you can feel
 
 export interface Question {
@@ -37,7 +36,6 @@ export interface Question {
   tiles?: StickerId[]; // count grid / odd-one board / tapTarget crowd
   ask?: StickerId; // shadow: the animal to match
   seq?: (string | number)[]; // sequence tiles, "?" last
-  seqTokens?: string[]; // pattern: "circle-red" tokens, "?" last
   pads?: number[]; // memory: pad indices (0..3) in order
   want?: number; // feedLeo: how many snacks Leo wants
   options: string[]; // numbers, "TRUE!"/"NOPE!", sticker ids or pattern tokens
@@ -426,48 +424,6 @@ function genShadow(rng: Rng, diff: number, world: number): Partial<Question> {
   };
 }
 
-/**
- * v5 — patterns are made of ANIMAL FRIENDS now, not abstract coloured
- * shapes. "Monkey, fox, monkey, fox… who's next?" is something a 4-year-old
- * can say out loud and SEE; "purple square" was a puzzle for nobody.
- * The rule is the same (find the repeating unit), the art is concrete.
- */
-function genPattern(rng: Rng, diff: number): Partial<Question> {
-  const cast = shuffled(rng, ANIMALS);
-  let unit: StickerId[];
-  let tip: string;
-  if (diff <= 1) {
-    unit = [cast[0], cast[1]];
-    tip = `Say it out loud: ${cast[0]}, ${cast[1]}, ${cast[0]}, ${cast[1]}…`;
-  } else if (diff === 2) {
-    unit = rng() < 0.5 ? [cast[0], cast[0], cast[1]] : [cast[0], cast[1], cast[1]];
-    tip = "Someone loves to go twice — watch who!";
-  } else if (diff === 3) {
-    unit = [cast[0], cast[1], cast[2]];
-    tip = "Three friends take turns — sing the pattern!";
-  } else {
-    unit = [cast[0], cast[0], cast[1], cast[1]];
-    tip = "Two of each, in pairs — A, A, B, B…";
-  }
-  // units shown: enough to make the repeat obvious, never overwhelming
-  const repeats = diff >= 3 ? 2 : 3;
-  const shown: StickerId[] = [];
-  for (let r = 0; r < repeats; r++) shown.push(...unit);
-  const correct = unit[0];
-  // decoys are animals from OUTSIDE the pattern — clearly not "next"
-  const outsiders = cast.slice(3).filter((a) => !unit.includes(a));
-  const decoys = shuffled(rng, outsiders).slice(0, diff <= 2 ? 2 : 3);
-  const all = shuffled(rng, [correct, ...decoys]);
-  return {
-    prompt: "What comes next in the pattern?",
-    seqTokens: [...shown, "?"],
-    options: all,
-    answer: all.indexOf(correct),
-    time: questionTime(diff) + 6, // little eyes scan pictures — give them room
-    tip,
-  };
-}
-
 function genFeedLeo(rng: Rng, diff: number, world: number): Partial<Question> {
   const snacks: StickerId[] =
     world === 3
@@ -490,13 +446,17 @@ function genFeedLeo(rng: Rng, diff: number, world: number): Partial<Question> {
 
 const POOLS: QKind[][] = [
   // Jungle Jam: gentle numbers + hands-on fun
-  ["count", "addsub", "oddOne", "sequence", "truefalse", "compare", "tapTarget", "shadow", "pattern", "feedLeo"],
+  ["count", "addsub", "oddOne", "sequence", "truefalse", "compare", "tapTarget", "shadow", "feedLeo"],
   // Coral Cove
-  ["addsub", "compare", "sequence", "oddOne", "truefalse", "count", "shadow", "pattern", "feedLeo", "tapTarget"],
+  ["addsub", "compare", "sequence", "oddOne", "truefalse", "count", "shadow", "feedLeo", "tapTarget"],
   // Space Hop
-  ["multiply", "sequence", "memory", "truefalse", "oddOne", "compare", "pattern", "tapTarget"],
+  ["multiply", "sequence", "memory", "truefalse", "oddOne", "compare", "tapTarget"],
   // Candy Peak: the big championship mix
-  ["multiply", "memory", "sequence", "truefalse", "addsub", "oddOne", "feedLeo", "shadow", "tapTarget", "pattern"],
+  ["multiply", "memory", "sequence", "truefalse", "addsub", "oddOne", "feedLeo", "shadow", "tapTarget"],
+  // Farm Days (v7): gentle counting among the barnyard crew
+  ["count", "compare", "addsub", "oddOne", "tapTarget", "shadow", "feedLeo", "sequence"],
+  // Road Rush (v7): fast eyes, fast taps
+  ["tapTarget", "count", "compare", "shadow", "addsub", "truefalse", "oddOne", "sequence"],
 ];
 
 /** Deterministic per level: which 8 mini-games does this level hold? */
@@ -535,7 +495,6 @@ export function makeQuestion(
     case "memory": body = genMemory(rng, diff); break;
     case "tapTarget": body = genTapTarget(rng, diff, world); break;
     case "shadow": body = genShadow(rng, diff, world); break;
-    case "pattern": body = genPattern(rng, diff); break;
     case "feedLeo": body = genFeedLeo(rng, diff, world); break;
   }
   return {

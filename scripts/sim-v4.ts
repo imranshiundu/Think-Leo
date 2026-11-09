@@ -31,11 +31,9 @@ for (let lvl = 1; lvl <= WORLDS.length * LEVELS_PER_WORLD; lvl++) {
       if (!q.prompt) fail(`L${lvl} ${kind} d${diff}: empty prompt`);
       if (typeof q.answer !== "number") fail(`L${lvl} ${kind}: bad answer`);
       if (q.time <= 0) fail(`L${lvl} ${kind} d${diff}: bad time ${q.time}`);
-      if (["tapTarget", "shadow", "pattern"].includes(kind)) {
+      if (["tapTarget", "shadow"].includes(kind)) {
         if (kind === "shadow" && !q.ask) fail(`L${lvl} shadow: no ask`);
         if (kind === "tapTarget" && (!q.tiles || q.tiles.length < 9)) fail(`L${lvl} tapTarget: thin crowd`);
-        if (kind === "pattern" && (!q.seqTokens || !q.seqTokens.includes("?"))) fail(`L${lvl} pattern: no ? slot`);
-        if (kind === "pattern" && q.answer < 0) fail(`L${lvl} pattern: answer not in options`);
         if (kind === "shadow" && (q.answer < 0 || q.answer >= q.options.length)) fail(`L${lvl} shadow: answer OOB`);
       }
       if (kind === "feedLeo" && !(q.want && q.want >= 3 && q.want <= 9)) fail(`L${lvl} feedLeo: bad want`);

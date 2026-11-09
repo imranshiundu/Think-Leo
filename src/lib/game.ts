@@ -72,6 +72,26 @@ export const WORLDS: World[] = [
     wash: ["#ffe9f1", "#fff3d6"],
     banner: "#ff5a8c",
   },
+  {
+    id: 4,
+    name: "Farm Days",
+    emblem: "cow",
+    tagline: "Barnyard counting & country quests",
+    node: "#ff9f43",
+    edge: "#d97706",
+    wash: ["#ffefd0", "#ffe2b8"],
+    banner: "#ff9f43",
+  },
+  {
+    id: 5,
+    name: "Road Rush",
+    emblem: "car",
+    tagline: "Fast eyes, fast taps, big trips",
+    node: "#3a86ff",
+    edge: "#2667cc",
+    wash: ["#e3f0ff", "#d8eaff"],
+    banner: "#3a86ff",
+  },
 ];
 
 export const LEVELS_PER_WORLD = 10;
@@ -287,7 +307,11 @@ export type QuestEvent =
   // LEO EGGS (the surprise-egg arcade, §15) — same ONE board
   | "eggs" // eggs cracked today (any egg, any result)
   | "eggNew" // NEW friends hatched today
-  | "eggRare"; // rare-or-better hatches today
+  | "eggRare" // rare-or-better hatches today
+  // LEO FEED (the infinite surprise feed, §16) — same ONE board
+  | "pulls" // feed cards opened today
+  | "feedNew" // NEW friends met in the feed today
+  | "feedRare"; // shiny (rare-or-better) feed cards today
 
 export interface QuestDef {
   id: string;
@@ -315,6 +339,10 @@ export const QUEST_POOL: QuestDef[] = [
   { id: "eggs5", label: "Crack 5 surprise eggs", event: "eggs", target: 5, rewardXp: 20, icon: "egg" },
   { id: "eggNewToday", label: "Hatch a brand-new friend", event: "eggNew", target: 1, rewardXp: 20, icon: "egg" },
   { id: "eggRare2", label: "Hatch 2 rare-or-better friends", event: "eggRare", target: 2, rewardXp: 30, icon: "egg" },
+  // LEO FEED — the feed shares the ONE daily board (§16)
+  { id: "pull8", label: "Open 8 feed cards", event: "pulls", target: 8, rewardXp: 20, icon: "zap" },
+  { id: "feedNewToday", label: "Meet a NEW feed friend", event: "feedNew", target: 1, rewardXp: 20, icon: "map" },
+  { id: "feedRare2", label: "Open 2 shiny feed cards", event: "feedRare", target: 2, rewardXp: 30, icon: "star" },
 ];
 
 /**
@@ -376,7 +404,7 @@ export const ACH_DEFINITIONS: Record<string, AchDef> = {
   streak14: { id: "streak14", name: "Fortnight Legend", desc: "14-day streak", icon: "crown", xp: 120 },
   trail10: { id: "trail10", name: "Trail Blazer", desc: "Stars on 10 levels", icon: "map", xp: 60 },
   collector25: { id: "collector25", name: "Star Collector", desc: "Stars on 25 levels", icon: "medal", xp: 100 },
-  champion40: { id: "champion40", name: "Brain Champion", desc: "Stars on all 40 levels", icon: "trophy", xp: 200 },
+  champion40: { id: "champion40", name: "Brain Champion", desc: `Stars on all ${TOTAL_LEVELS} levels`, icon: "trophy", xp: 200 },
   century: { id: "century", name: "Century Brain", desc: "100 correct answers", icon: "brain", xp: 60 },
   megamind: { id: "megamind", name: "Mega Mind", desc: "500 correct answers", icon: "brain", xp: 120 },
   hunter: { id: "hunter", name: "Treasure Hunter", desc: "Open 2 world chests", icon: "gem", xp: 50 },
@@ -393,6 +421,13 @@ export const ACH_DEFINITIONS: Record<string, AchDef> = {
   eggLegend: { id: "eggLegend", name: "Golden Luck", desc: "Hatch a LEGENDARY friend", icon: "gem", xp: 120 },
   eggMaster: { id: "eggMaster", name: "Nest Master", desc: "Discover all 13 nest friends", icon: "trophy", xp: 200 },
   eggEvolve: { id: "eggEvolve", name: "Grow Up", desc: "Grow a friend to Stage 2", icon: "crown", xp: 60 },
+  // Leo Feed (the infinite surprise feed)
+  feedFirst: { id: "feedFirst", name: "First Swipe", desc: "Open your first feed card", icon: "star", xp: 40 },
+  feedHeat: { id: "feedHeat", name: "Feed on Fire", desc: "Charge a MEGA card with heat", icon: "zap", xp: 60 },
+  feedLegend: { id: "feedLegend", name: "Golden Feed", desc: "Open a LEGENDARY feed card", icon: "gem", xp: 120 },
+  feedMythic: { id: "feedMythic", name: "Feed Dreamer", desc: "Open a MYTHIC feed card", icon: "crown", xp: 200 },
+  feedExplorer: { id: "feedExplorer", name: "Feed Explorer", desc: "Meet 6 feed friends", icon: "map", xp: 60 },
+  feedMaster: { id: "feedMaster", name: "Feed Master", desc: "Meet all 16 feed friends", icon: "trophy", xp: 200 },
 };
 
 /* ── Leo's encouragement — picked by mood across the app ──────── */

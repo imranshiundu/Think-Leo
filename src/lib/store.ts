@@ -35,6 +35,15 @@
  *    incubating while the app is closed;
  *  · the pity counter (eggPity) guarantees rare-or-better every 8
  *    free Spark eggs — losing streaks always end.
+ *
+ * V7 — LEO FEED (the infinite surprise feed) joins the ONE economy:
+ *  · every card pays rarity XP through the same pipe — a pull IS a
+ *    played day, so the streak records itself while kids have fun;
+ *  · the Wall of Fame (feedAlbum) is a collection with a visible face;
+ *  · the feed LEARNS (feedAffinity) — cards lean toward loved friends;
+ *  · heat (feedHeat) charges toward a guaranteed MEGA card, and the
+ *    pity counter (feedPity) guarantees epic+ within 9 cards;
+ *  · the daily MEGA gift (feedMegaDay) is the comeback trigger.
  */
 
 import { create } from "zustand";
@@ -52,6 +61,7 @@ import {
   MAX_HEARTS,
   playerLevelFromXp,
   questsForDay,
+  TOTAL_LEVELS,
   weekKey,
   yesterdayKey,
   type AchDef,
@@ -71,6 +81,18 @@ import {
   type EggPlan,
   type NestState,
 } from "./eggs";
+import {
+  AFFINITY_CAP,
+  AFFINITY_STEP,
+  FEED_DUPE_SPARK,
+  FEED_DISCOVERY_SPARK,
+  FEED_FRIENDS,
+  FEED_TARGET,
+  HEAT_MAX,
+  MEGA_GIFT_XP,
+  PITY_MAX,
+  type FeedPlan,
+} from "./feed";
 
 export interface LeoSave {
   xp: number;
@@ -116,6 +138,15 @@ export interface LeoSave {
   eggPity: number; // dry Spark eggs since the last rare-or-better
   eggNestAt: number; // ms epoch the free nest egg started incubating (0 = ready)
   eggRoyalDay: string; // day the free daily Royal Egg was claimed
+  /* LEO FEED — the infinite surprise feed (v7) */
+  feedPulls: number; // lifetime cards opened
+  feedAlbum: Record<string, number>; // uid -> times met (the Wall of Fame)
+  feedAffinity: Record<string, number>; // uid -> love weight (the feed learns)
+  feedPity: number; // cards since the last epic+ (pity at 9)
+  feedHeat: number; // shiny reveals toward the MEGA card
+  feedBestHeat: number; // best heat ever charged (achievement)
+  feedMegaDay: string; // day the free daily MEGA card was claimed
+  feedPullDay: string; // last day a card was opened (comeback luck)
   _hydrated: boolean;
 }
 
@@ -159,6 +190,11 @@ export interface LeoActions {
   /** Leo Eggs: feed GROW_SPEND duplicate copies to grow a friend to
    *  Stage 2 (pride only — same art, golden frame). */
   evolveCritter: (uid: string) => boolean;
+  /** Leo Feed: one card resolved — Wall of Fame, affinity, heat, pity,
+   *  rarity XP, quests and achievements in ONE pipeline. */
+  trackFeed: (plan: FeedPlan) => { gainedSpark: number; xp: number };
+  /** Leo Feed: claim today's free MEGA card (the morning trigger). */
+  claimFeedMega: () => boolean;
   pendingAch: AchDef[];
   dismissAch: () => void;
   levelUpPulse: number; // increments on every new player level (UI trigger)
@@ -210,6 +246,14 @@ const DEFAULT_SAVE: LeoSave = {
   eggPity: 0,
   eggNestAt: 0, // first visit: the nest is already warm
   eggRoyalDay: "",
+  feedPulls: 0,
+  feedAlbum: {},
+  feedAffinity: {},
+  feedPity: 0,
+  feedHeat: 0,
+  feedBestHeat: 0,
+  feedMegaDay: "",
+  feedPullDay: "",
   _hydrated: false,
 };
 
@@ -218,6 +262,11 @@ const DEFAULT_SAVE: LeoSave = {
 /** Distinct egg friends discovered (bag keys that are real critters). */
 function eggDistinct(s: LeoSave): number {
   return Object.keys(s.eggBag).filter((k) => CRITTERS_BY_UID[k]).length;
+}
+
+/** Distinct feed friends met (Wall of Fame keys that are real friends). */
+function feedDistinct(s: LeoSave): number {
+  return Object.keys(s.feedAlbum).filter((k) => FEED_FRIENDS.some((f) => f.uid === k)).length;
 }
 
 /** A fresh, empty quest board for today. */
@@ -333,7 +382,7 @@ function checkAchievements(snapshot: LeoSave): { save: LeoSave; unlocked: AchDef
     streak14: s.streak >= 14,
     trail10: starLevels >= 10,
     collector25: starLevels >= 25,
-    champion40: starLevels >= 40,
+    champion40: starLevels >= TOTAL_LEVELS,
     century: s.totalCorrect >= 100,
     megamind: s.totalCorrect >= 500,
     hunter: chestCount >= 2,
@@ -348,6 +397,13 @@ function checkAchievements(snapshot: LeoSave): { save: LeoSave; unlocked: AchDef
     eggMaster: eggDistinct(s) >= COLLECTION_TARGET,
     eggLegend: CRITTERS.some((c) => (c.rarity === "legend" || c.rarity === "mythic") && (s.eggBag[c.uid]?.count ?? 0) >= 1),
     eggEvolve: Object.values(s.eggBag).some((c) => c.evolved),
+    // Leo Feed
+    feedFirst: s.feedPulls >= 1,
+    feedHeat: s.feedBestHeat >= HEAT_MAX,
+    feedLegend: FEED_FRIENDS.some((f) => f.rarity === "legend" && (s.feedAlbum[f.uid] ?? 0) >= 1),
+    feedMythic: FEED_FRIENDS.some((f) => f.rarity === "mythic" && (s.feedAlbum[f.uid] ?? 0) >= 1),
+    feedExplorer: feedDistinct(s) >= 6,
+    feedMaster: feedDistinct(s) >= FEED_TARGET,
   };
 
   const unlocked: AchDef[] = [];
@@ -725,6 +781,66 @@ export const useLeo = create<LeoStore>()(
         return true;
       },
 
+      /* ── Leo Feed (the infinite surprise feed) ───────────────── */
+
+      /**
+       * One card resolved. Everything a pull touches happens HERE, in
+       * one pure pipeline built from a single snapshot: the Wall of
+       * Fame, the affinity table (the feed learns), the heat meter,
+       * the pity counter, the Spark payout and the rarity XP — which
+       * flows through the same addXp pipe as every other grant, so a
+       * pull IS a played day (streaks record themselves while kids
+       * just have fun). Achievements are checked once, at the end.
+       */
+      trackFeed: (plan) => {
+        const s0 = ensureQuestDay(get());
+        const uid = plan.friend.uid;
+        const cur = s0.feedAlbum[uid] ?? 0;
+        const shiny = plan.rarity !== "common";
+        const heat = plan.heatCharged
+          ? 0 // the MEGA card fires and cools the meter
+          : Math.min(HEAT_MAX, s0.feedHeat + (shiny ? 1 : 0)); // commons keep the warmth
+
+        let s: LeoSave = {
+          ...s0,
+          feedAlbum: { ...s0.feedAlbum, [uid]: cur + 1 },
+          feedAffinity: {
+            ...s0.feedAffinity,
+            [uid]: Math.min(AFFINITY_CAP, (s0.feedAffinity[uid] ?? 1) * AFFINITY_STEP),
+          },
+          feedHeat: heat,
+          feedBestHeat: Math.max(s0.feedBestHeat, plan.heatCharged ? HEAT_MAX : heat),
+          feedPity: plan.pityReset ? 0 : Math.min(PITY_MAX, s0.feedPity + 1),
+          feedPulls: s0.feedPulls + 1,
+          feedPullDay: dayKey(),
+          // duplicates pay Spark into the SAME purse the egg shop uses
+          eggStars: s0.eggStars + FEED_DUPE_SPARK[plan.rarity] + (plan.isNew ? FEED_DISCOVERY_SPARK : 0),
+        };
+        s = bumpQuests(s, "pulls", 1);
+        if (plan.isNew) s = bumpQuests(s, "feedNew", 1);
+        if (shiny) s = bumpQuests(s, "feedRare", 1);
+        const xp = RARITY_META[plan.rarity].xp;
+        const { save: xped } = addXpPure(s, xp);
+        s = bumpQuests(xped, "xp", xp);
+        set(s);
+
+        const { save, unlocked } = checkAchievements(get());
+        if (unlocked.length) {
+          set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
+        }
+        const gainedSpark = FEED_DUPE_SPARK[plan.rarity] + (plan.isNew ? FEED_DISCOVERY_SPARK : 0);
+        return { gainedSpark, xp };
+      },
+
+      claimFeedMega: () => {
+        const s = get();
+        const today = dayKey();
+        if (s.feedMegaDay === today) return false;
+        set({ ...s, feedMegaDay: today });
+        get().addXp(MEGA_GIFT_XP);
+        return true;
+      },
+
       pendingAch: [],
       dismissAch: () => set({ pendingAch: get().pendingAch.slice(1) }),
       levelUpPulse: 0,
@@ -736,7 +852,7 @@ export const useLeo = create<LeoStore>()(
     }),
     {
       name: "think-leo-save-v1",
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => {
         const { _hydrated, pendingAch, levelUpPulse, ...rest } = s;
@@ -787,6 +903,15 @@ export const useLeo = create<LeoStore>()(
           eggPity: p.eggPity ?? 0,
           eggNestAt: p.eggNestAt ?? 0,
           eggRoyalDay: p.eggRoyalDay ?? "",
+          // v7: the feed fields (an empty wall that is about to fill up)
+          feedPulls: p.feedPulls ?? 0,
+          feedAlbum: p.feedAlbum ?? {},
+          feedAffinity: p.feedAffinity ?? {},
+          feedPity: p.feedPity ?? 0,
+          feedHeat: p.feedHeat ?? 0,
+          feedBestHeat: p.feedBestHeat ?? 0,
+          feedMegaDay: p.feedMegaDay ?? "",
+          feedPullDay: p.feedPullDay ?? "",
         };
       },
       /**
@@ -903,4 +1028,21 @@ export function useComeback(): boolean {
   if (!hydrated || !lastPlayDay) return false;
   const today = dayKey();
   return daysBetween(lastPlayDay, today) >= 2 && comebackDay !== today;
+}
+
+/* ── Leo Feed selectors ─────────────────────────────────────────── */
+
+/** Wall of Fame progress: distinct friends met + the album itself. */
+export function useFeedWall() {
+  const feedAlbum = useLeo((s) => s.feedAlbum);
+  const found = Object.keys(feedAlbum).filter((k) => FEED_FRIENDS.some((f) => f.uid === k)).length;
+  return { found, target: FEED_TARGET, album: feedAlbum };
+}
+
+/** Is the free daily MEGA card waiting? (hydrated + not claimed today) */
+export function useFeedMegaReady(): boolean {
+  const feedMegaDay = useLeo((s) => s.feedMegaDay);
+  const hydrated = useLeo((s) => s._hydrated);
+  if (!hydrated) return false;
+  return feedMegaDay !== dayKey();
 }

@@ -87,7 +87,6 @@ const KIND_LABEL: Record<string, string> = {
   memory: "Memory",
   tapTarget: "Tap it!",
   shadow: "Shadow",
-  pattern: "Pattern",
   feedLeo: "Feed Leo",
 };
 
@@ -1156,9 +1155,7 @@ function QuestionStage({
         </div>
       )}
 
-      {q.kind === "pattern" && q.seqTokens && <PatternRow tokens={q.seqTokens} />}
-
-      {q.kind === "feedLeo" && q.ask && (
+      {q.kind === "shadow" && q.ask && (
         <FeedLeoGame
           snack={q.ask}
           want={q.want ?? 3}
@@ -1188,7 +1185,7 @@ function QuestionStage({
             const isCorrect = reveal && i === q.answer;
             const isWrongPick = reveal && picked === i && i !== q.answer;
             const plate = q.groupOptions?.[i];
-            const isArt = (q.kind === "oddOne" || q.kind === "shadow" || q.kind === "pattern") && isStickerId(opt);
+            const isArt = (q.kind === "oddOne" || q.kind === "shadow") && isStickerId(opt);
             return (
               <motion.button
                 key={i}
@@ -1331,32 +1328,6 @@ function MemoryPads({
 }
 
 /* ── v4 hands-on mini-games ────────────────────────────────────── */
-
-/** The pattern row: animal friends + the "?" slot, sized for small screens.
- *  v5 — tokens are sticker ids now (monkey, fox, monkey, fox… "?"). */
-function PatternRow({ tokens }: { tokens: string[] }) {
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-1.5 py-2">
-      {tokens.map((t, i) => (
-        <motion.span
-          key={i}
-          initial={{ scale: 0, rotate: -12 }}
-          animate={{ scale: 1, rotate: 0 }}
-          transition={{ delay: Math.min(0.5, i * 0.05), type: "spring", stiffness: 320, damping: 16 }}
-          className={`flex h-12 w-12 items-center justify-center rounded-xl border-[3px] ${
-            t === "?" ? "border-dashed border-leo-sun bg-leo-cream" : "border-leo-line bg-white"
-          }`}
-        >
-          {t === "?" ? (
-            <span className="font-display text-xl font-bold text-leo-sun-deep">?</span>
-          ) : (
-            <Sticker id={t as StickerId} size={38} />
-          )}
-        </motion.span>
-      ))}
-    </div>
-  );
-}
 
 /** Tap-the-target: pop every target in a mixed crowd. Wrong taps just boing. */
 function TapTargetGame({

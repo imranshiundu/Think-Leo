@@ -35,7 +35,7 @@ import {
   leoGreeting,
   playerLevelFromXp,
 } from "@/lib/game";
-import { useComeback, useEggCollection, useEggNest, useLeo, useMergeEggReady, useQuests, useZooProgress } from "@/lib/store";
+import { useComeback, useEggCollection, useEggNest, useFeedMegaReady, useFeedWall, useLeo, useMergeEggReady, useQuests, useZooProgress } from "@/lib/store";
 import { sfx } from "@/lib/sound";
 import { motion } from "framer-motion";
 import {
@@ -68,11 +68,13 @@ const ACH_SHELF = Object.values(ACH_DEFINITIONS);
 export function Home({
   onPlay,
   onMap,
+  onFeed,
   onArcade,
   onEggs,
 }: {
   onPlay: () => void; // jumps straight into the current level
   onMap: (worldId: number) => void;
+  onFeed: () => void; // opens LEO FEED, the infinite surprise feed
   onArcade: () => void; // opens LEO POP, the merge arcade
   onEggs: () => void; // opens LEO EGGS, the surprise-egg arcade
 }) {
@@ -84,6 +86,8 @@ export function Home({
   const zoo = useZooProgress();
   const nest = useEggNest();
   const eggs = useEggCollection();
+  const feedWall = useFeedWall();
+  const feedGift = useFeedMegaReady();
 
   const [installEvt, setInstallEvt] = useState<InstallPromptEvent | null>(null);
   useEffect(() => {
@@ -385,6 +389,80 @@ export function Home({
             </div>
             <span onClick={(e) => e.stopPropagation()} className="shrink-0">
               <ChunkyButton color="berry" onClick={onEggs} ariaLabel="Play Leo Eggs">
+                <span className="inline-flex items-center gap-1.5">
+                  <Play width={16} height={16} className="fill-white" /> PLAY
+                </span>
+              </ChunkyButton>
+            </span>
+          </motion.div>
+        </section>
+
+        {/* ── LEO FEED — the infinite surprise feed ── (a div with
+            button semantics: the PLAY chunky-button inside must not nest
+            <button> in <button>) */}
+        <section className="mt-4">
+          <motion.div
+            role="button"
+            tabIndex={0}
+            onClick={onFeed}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") onFeed();
+            }}
+            whileTap={{ scale: 0.98 }}
+            className="leo-card relative flex w-full cursor-pointer items-center gap-4 overflow-hidden border-[3px] p-5 text-left"
+            style={{ background: "linear-gradient(120deg,#f3e9ff 0%,#ffecf3 50%,#dcf9f4 100%)" }}
+            aria-label="Open LEO FEED, the infinite surprise feed"
+          >
+            {feedGift && (
+              <span className="anim-pulse-ring absolute right-4 top-4 rounded-full border-[2.5px] border-leo-grape bg-white px-2.5 py-0.5 font-display text-[10px] font-bold text-leo-grape-deep">
+                Daily gift ready!
+              </span>
+            )}
+            <span className="absolute left-4 top-4 rounded-full bg-gradient-to-r from-leo-berry to-leo-grape px-2.5 py-0.5 font-display text-[10px] font-bold text-white">
+              NEW GAME
+            </span>
+            <motion.div
+              className="relative shrink-0"
+              animate={{ y: [0, -8, 0], rotate: [-4, 4, -4] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <span
+                className="flex h-[72px] w-[72px] items-center justify-center rounded-[24px] border-[3px] border-[#e8a80c]"
+                style={{ background: "radial-gradient(circle at 34% 26%, #fffbe8 10%, #ffd75e 72%)" }}
+              >
+                <Sticker id="rocket" size={52} />
+              </span>
+              <motion.span
+                className="absolute -right-3 -top-2"
+                animate={{ y: [0, -6, 0], rotate: [0, 15, 0] }}
+                transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
+              >
+                <Sparkles width={22} height={22} className="text-leo-grape" />
+              </motion.span>
+            </motion.div>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-display text-2xl font-bold leading-none text-leo-ink">
+                LEO <span className="bg-gradient-to-r from-leo-grape to-leo-teal bg-clip-text text-transparent">FEED</span>
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-leo-ink-soft">
+                An endless feed of mystery cards — open one, meet a friend, and the next is already waiting. No maths, ever.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="pill px-2.5 py-0.5 text-[11px] text-leo-ink">
+                  <Star width={12} height={12} className="fill-leo-sun text-leo-sun-deep" /> Wall {feedWall.found}/{feedWall.target}
+                </span>
+                <span className="pill px-2.5 py-0.5 text-[11px] text-leo-ink">
+                  <Zap width={12} height={12} className="text-leo-grape" /> {save.feedPulls} cards opened
+                </span>
+                {save.feedHeat > 0 && (
+                  <span className="pill px-2.5 py-0.5 text-[11px] text-leo-ink">
+                    <Flame width={12} height={12} className="text-leo-berry-deep" /> heat {save.feedHeat}/5
+                  </span>
+                )}
+              </div>
+            </div>
+            <span onClick={(e) => e.stopPropagation()} className="shrink-0">
+              <ChunkyButton color="grape" onClick={onFeed} ariaLabel="Play Leo Feed">
                 <span className="inline-flex items-center gap-1.5">
                   <Play width={16} height={16} className="fill-white" /> PLAY
                 </span>

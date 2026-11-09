@@ -20,6 +20,7 @@ import { Play } from "@/components/game/Play";
 import { Splash } from "@/components/game/Splash";
 import { LeoPop } from "@/components/arcade/LeoPop";
 import { EggGame } from "@/components/eggs/EggGame";
+import { FeedGame } from "@/components/feed/FeedGame";
 import { AchievementToasts } from "@/components/game/bits";
 import { detectDevice, watchDevice, type DeviceKind } from "@/lib/device";
 import { recordDevice } from "@/lib/deviceInfo";
@@ -31,7 +32,7 @@ import { Leo } from "@/components/leo/Leo";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type View = "home" | "map" | "play" | "arcade" | "eggs";
+type View = "home" | "map" | "play" | "arcade" | "eggs" | "feed";
 
 export default function ThinkLeo() {
   const [device, setDevice] = useState<DeviceKind | null>(null);
@@ -131,6 +132,18 @@ export default function ThinkLeo() {
     });
   }, []);
 
+  /* the feed gets a galaxy curtain — grape to teal, like a night sky */
+  const [feedWipe, setFeedWipe] = useState(false);
+  const goFeed = useCallback(() => {
+    setFeedWipe((cur) => {
+      if (cur) return cur;
+      sfx.wipe();
+      window.setTimeout(() => setView("feed"), 560);
+      window.setTimeout(() => setFeedWipe(false), 1250);
+      return true;
+    });
+  }, []);
+
   /* next unmastered level */
   const currentLevel = useMemo(() => {
     for (let i = 1; i <= WORLDS.length * LEVELS_PER_WORLD; i++) {
@@ -158,6 +171,7 @@ export default function ThinkLeo() {
       <AnimatePresence>{wipe !== null && <LevelWipe key="wipe" level={wipe} />}</AnimatePresence>
       <AnimatePresence>{arcadeWipe && <ArcadeWipe key="arcade-wipe" />}</AnimatePresence>
       <AnimatePresence>{eggWipe && <EggWipe key="egg-wipe" />}</AnimatePresence>
+      <AnimatePresence>{feedWipe && <FeedWipe key="feed-wipe" />}</AnimatePresence>
 
       <motion.div
         key={view}
@@ -175,6 +189,10 @@ export default function ThinkLeo() {
               sfx.click();
               setFocusWorld(w);
               setView("map");
+            }}
+            onFeed={() => {
+              sfx.click();
+              goFeed();
             }}
             onArcade={() => {
               sfx.click();
@@ -211,6 +229,8 @@ export default function ThinkLeo() {
         {view === "arcade" && <LeoPop key="arcade" onExit={() => setView("home")} />}
 
         {view === "eggs" && <EggGame key="eggs" onExit={() => setView("home")} />}
+
+        {view === "feed" && <FeedGame key="feed" onExit={() => setView("home")} />}
       </motion.div>
     </>
   );
@@ -334,6 +354,45 @@ function EggWipe() {
           <div className="text-left">
             <div className="font-display text-sm font-bold uppercase tracking-widest text-white/90">Think Leo presents</div>
             <div className="font-display text-4xl font-bold text-white text-outline-sm">LEO EGGS</div>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ── the feed curtain: a night-sky burst with the rocket friend ── */
+function FeedWipe() {
+  return (
+    <motion.div
+      className="pointer-events-none fixed inset-0 z-[85] flex items-center justify-center"
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.45, ease: "easeOut" } }}
+    >
+      <motion.div
+        className="absolute inset-0"
+        style={{ background: "linear-gradient(135deg, #9b5de5, #2ec4b6 60%, #ffb020)" }}
+        initial={{ clipPath: "circle(0% at 50% 46%)" }}
+        animate={{ clipPath: "circle(78% at 50% 46%)" }}
+        transition={{ duration: 0.52, ease: [0.7, 0, 0.3, 1] }}
+      />
+      <motion.div
+        className="relative flex flex-col items-center"
+        initial={{ scale: 0.6, opacity: 0, y: 24 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ delay: 0.18, type: "spring", stiffness: 260, damping: 18 }}
+      >
+        <div className="flex items-center gap-3 rounded-3xl border-[4px] border-white/90 bg-white/25 px-7 py-4 backdrop-blur-sm">
+          <motion.div
+            animate={{ y: [0, -12, 0], rotate: [-6, 6, -6] }}
+            transition={{ duration: 0.8, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <Sticker id="rocket" size={72} />
+          </motion.div>
+          <div className="text-left">
+            <div className="font-display text-sm font-bold uppercase tracking-widest text-white/90">Think Leo presents</div>
+            <div className="font-display text-4xl font-bold text-white text-outline-sm">LEO FEED</div>
           </div>
         </div>
       </motion.div>

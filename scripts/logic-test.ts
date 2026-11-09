@@ -75,11 +75,6 @@ for (let lvl = 1; lvl <= 40; lvl++) {
         genFails++;
         console.log(`  level ${lvl} q${qi} kind=${q.kind}: prompt="${q.prompt}" options=${JSON.stringify(q.options)} answer=${q.answer}`);
       }
-      // pattern questions must carry sticker options (animal friends, v5)
-      if (q.kind === "pattern" && (!q.seqTokens || q.seqTokens.length < 5)) {
-        genFails++;
-        console.log(`  level ${lvl} q${qi} pattern: seqTokens=${JSON.stringify(q.seqTokens)}`);
-      }
       // determinism: same inputs → identical question
       const q2 = makeQuestion(plan[qi], 1 + Math.floor((lvl - 1) / 8), lvl, qi, attempt);
       if (JSON.stringify(q) !== JSON.stringify(q2)) {
