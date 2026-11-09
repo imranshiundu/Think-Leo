@@ -26,7 +26,6 @@ import { StarPop } from "@/components/leo/badges";
 import { Sticker, type StickerId } from "@/components/leo/stickers";
 import { sfx } from "@/lib/sound";
 
-const WORD = "Think Leo!";
 /* the parade: one buddy from every world walks the stage */
 const PARADE: StickerId[] = ["elephant", "monkey", "parrot", "dolphin", "rocket", "cupcake", "butterfly", "candy"];
 const PAWS = 8;
@@ -154,19 +153,26 @@ export function Splash({ quick = false, onDone }: { quick?: boolean; onDone: () 
         <span className="pointer-events-none absolute left-3 top-2.5 h-6 w-9 rotate-[24deg] rounded-full bg-white/45 blur-[3px]" />
       </div>
 
-      {/* ── wordmark ── */}
-      <div className="relative mt-4 flex items-baseline overflow-hidden">
-        {WORD.split("").map((ch, i) => (
-          <span key={i} className="splash-letter inline-block font-display text-6xl font-bold text-leo-ink">
-            {ch === " " ? "\u00A0" : ch === "L" ? (
-              <span className="bg-gradient-to-r from-leo-sun via-leo-berry to-leo-grape bg-clip-text text-transparent">
-                Leo!
-              </span>
-            ) : (
-              ch
-            )}
+      {/* ── wordmark — "Think " pops letter by letter, "Leo!" pops as ONE
+             gradient word. (The old code swapped every "L" for the whole
+             string "Leo!" while e, o, ! still rendered after it — the
+             wordmark spelled "Think Leo!eo!", read as "Think Leo Leo".) ── */}
+      <div className="relative mt-4 flex items-baseline overflow-hidden" aria-label="Think Leo!">
+        {"Think ".split("").map((ch, i) => (
+          <span
+            key={`t-${i}`}
+            className="splash-letter inline-block font-display text-6xl font-bold text-leo-ink"
+            aria-hidden
+          >
+            {ch === " " ? "\u00A0" : ch}
           </span>
         ))}
+        <span
+          className="splash-letter inline-block bg-gradient-to-r from-leo-sun via-leo-berry to-leo-grape bg-clip-text font-display text-6xl font-bold text-transparent"
+          aria-hidden
+        >
+          Leo!
+        </span>
         <span className="splash-star pointer-events-none absolute -right-10 -top-5">
           <StarPop size={38} />
         </span>
@@ -216,20 +222,5 @@ function Paw({ className = "" }: { className?: string }) {
 }
 
 function SplashMark() {
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div
-        className="flex h-[92px] w-[92px] items-center justify-center rounded-[24px] border-[3.5px] border-white shadow-[0_10px_0_rgba(214,178,110,0.35)]"
-        style={{ background: "linear-gradient(145deg,#ffd34d 0%,#ffb020 55%,#ff9d2e 100%)" }}
-      >
-        <Leo mood="happy" size={76} />
-      </div>
-      <div className="font-display text-4xl font-bold">
-        <span className="text-leo-ink">Think </span>
-        <span className="bg-gradient-to-r from-leo-sun via-leo-berry to-leo-grape bg-clip-text text-transparent">
-          Leo!
-        </span>
-      </div>
-    </div>
-  );
+  return null; // retired — the GSAP wordmark is the one true mark
 }

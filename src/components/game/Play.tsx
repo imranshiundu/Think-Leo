@@ -1081,6 +1081,15 @@ function IntroCard({
                 </ChunkyButton>
               </div>
             )}
+            {/* every intro is escapable — a kid who tapped the wrong level
+                is never trapped inside the curtain */}
+            <button
+              type="button"
+              onClick={onExit}
+              className="mt-3 block w-full cursor-pointer font-display text-sm font-bold text-leo-ink-soft underline decoration-leo-line decoration-2 underline-offset-4 hover:text-leo-ink"
+            >
+              Back to map
+            </button>
           </div>
         )}
       </div>
@@ -1155,7 +1164,11 @@ function QuestionStage({
         </div>
       )}
 
-      {q.kind === "shadow" && q.ask && (
+      {/* feed Leo: drop exactly N snacks, then tap DONE (v4 hands-on game).
+          NOTE: this must key on "feedLeo" — an earlier build conditioned on
+          "shadow", which starved feed-Leo rounds of their board entirely and
+          bolted a snack bowl onto every shadow round. */}
+      {q.kind === "feedLeo" && q.ask && (
         <FeedLeoGame
           snack={q.ask}
           want={q.want ?? 3}
