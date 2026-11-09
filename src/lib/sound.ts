@@ -689,3 +689,9 @@ class LeoSound {
 }
 
 export const sfx = new LeoSound();
+
+/* e2e/debug hook — lets test harnesses (and the curious) verify that the
+   band is really on stage: window.__leoSfx.currentTrack, .musicOn, … */
+if (typeof window !== "undefined") {
+  (window as unknown as { __leoSfx?: LeoSound }).__leoSfx = sfx;
+}

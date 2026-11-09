@@ -1,14 +1,10 @@
 /**
  * Think Leo — Device Detection & Recording
  * ────────────────────────────────────────
- * THINK LEO IS A LAPTOP / DESKTOP EXPERIENCE: the game never runs on
- * phones or tablets (the friendly gate screen does instead). But every
- * visit IS recorded — device kind, platform, screen, memory — locally
- * and to the parents' dashboard API (/api/device → SQLite).
- *
- * Why record? So the team can see which devices kids actually ask for,
- * and so the gate screen can prove it understood the device it met:
- * "You're on: Xiaomi Phone · Android · Chrome · 393×873".
+ * Every visit IS recorded — device kind, platform, screen, memory — locally
+ * and to the parents' dashboard API (/api/device → SQLite). Laptops, phones
+ * and tablets all play; these snapshots tell the team which devices the
+ * family actually plays on.
  *
  * Privacy: this is anonymous hardware metadata (no IDs, no fingerprinting
  * for tracking, nothing shared). Stored on-device + our own database.

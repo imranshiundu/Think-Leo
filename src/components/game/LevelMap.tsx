@@ -11,6 +11,7 @@
 
 import { Leo } from "@/components/leo/Leo";
 import { ChestArt } from "@/components/leo/badges";
+import { AmbientCartoons } from "@/components/game/ambient";
 import { Sticker } from "@/components/leo/stickers";
 import { HeartPill, SoundToggles, StreakFlame, StarRow } from "@/components/game/bits";
 import { LEVELS_PER_WORLD, WORLDS, isUnlocked, worldOf } from "@/lib/game";
@@ -44,6 +45,14 @@ export function LevelMap({
   const scroller = useRef<HTMLDivElement>(null);
   const [toast, setToast] = useState<{ msg: string; key: number } | null>(null);
   const [shake, setShake] = useState(0);
+  /* phones shrink the whole winding trail to fit — same map, same feel */
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const fit = () => setScale(Math.min(1, window.innerWidth / (CANVAS_W + 24)));
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
 
   const currentLevel = useMemo(() => {
     for (let i = 1; i <= TOTAL; i++) if ((save.stars[i] ?? 0) === 0) return i;
@@ -62,8 +71,9 @@ export function LevelMap({
       (save.stars[firstLockedInWorld] ?? 0) === 0 && firstLockedInWorld <= currentLevel
         ? firstLockedInWorld
         : currentLevel;
-    el.scrollTo({ top: nodeY(target) - el.clientHeight * 0.55, behavior: "instant" as ScrollBehavior });
-  }, []);
+    el.scrollTo({ top: nodeY(target) * scale - el.clientHeight * 0.55, behavior: "instant" as ScrollBehavior });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scale]);
 
   useEffect(() => {
     if (!toast) return;
@@ -101,7 +111,9 @@ export function LevelMap({
   }, []);
 
   return (
-    <div className="leo-bg h-screen w-full">
+    <div className="leo-bg h-screen w-full overflow-hidden">
+      {/* ambient jungle/sea/space/candy buddies floating behind the map */}
+      <AmbientCartoons world={Math.max(0, Math.min(WORLDS.length - 1, startWorld))} count={6} opacity={0.13} />
       {/* fixed HUD */}
       <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-2 bg-gradient-to-b from-[#fff7e6] via-[#fff7e6ee] to-transparent px-4 py-3">
         <button
@@ -128,7 +140,19 @@ export function LevelMap({
       </div>
 
       <div ref={scroller} className="leo-scroll h-full w-full overflow-y-auto">
-        <div className="relative mx-auto" style={{ width: CANVAS_W, height: H }}>
+        {/* scale wrapper: reserves the scaled height so scrolling stays exact */}
+        <div style={{ height: H * scale, width: "100%" }}>
+          <div
+            className="relative mx-auto"
+            style={{
+              width: CANVAS_W,
+              height: H,
+              position: "relative",
+              left: "50%",
+              transform: `translateX(-50%) scale(${scale})`,
+              transformOrigin: "top center",
+            }}
+          >
           {/* trail */}
           <svg
             className="pointer-events-none absolute inset-0"
@@ -144,6 +168,7 @@ export function LevelMap({
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeDasharray="1 20"
+              className="trail-march"
             />
             <path
               d={trail}
@@ -194,7 +219,7 @@ export function LevelMap({
             );
           })}
 
-          {/* level nodes */}
+          {/* level nodes — they pop in one by one, bottom to top */}
           {Array.from({ length: TOTAL }, (_, k) => {
             const i = k + 1;
             const w = worldOf(i);
@@ -202,7 +227,14 @@ export function LevelMap({
             const unlocked = isUnlocked(i, save.stars);
             const isCurrent = i === currentLevel;
             return (
-              <div key={i} className="absolute" style={{ left: nodeX(i), top: nodeY(i), transform: "translate(-50%,-50%)" }}>
+              <motion.div
+                key={i}
+                className="absolute"
+                style={{ left: nodeX(i), top: nodeY(i) }}
+                initial={{ scale: 0, opacity: 0, x: "-50%", y: "-50%" }}
+                animate={{ scale: 1, opacity: 1, x: "-50%", y: "-50%" }}
+                transition={{ delay: Math.min(0.6, k * 0.035), type: "spring", stiffness: 260, damping: 17 }}
+              >
                 {isCurrent && (
                   <div className="pointer-events-none absolute -top-[74px] left-1/2 -translate-x-1/2">
                     <div className="anim-float">
@@ -233,9 +265,10 @@ export function LevelMap({
                     </div>
                   )}
                 </motion.button>
-              </div>
+              </motion.div>
             );
           })}
+          </div>
         </div>
       </div>
 

@@ -9,6 +9,7 @@
 
 import { Leo } from "@/components/leo/Leo";
 import { ChestArt } from "@/components/leo/badges";
+import { AmbientCartoons } from "@/components/game/ambient";
 import { Sticker } from "@/components/leo/stickers";
 import {
   ChunkyButton,
@@ -40,7 +41,6 @@ import {
   Download,
   Flame,
   Gem,
-  Laptop,
   Lock,
   Map,
   Medal,
@@ -177,9 +177,16 @@ export function Home({
         {/* ── hero ── */}
         <section className="mt-4 grid flex-1 grid-cols-1 gap-4 md:grid-cols-[1.1fr_1fr]">
           <div className="leo-card relative flex items-center justify-center gap-4 overflow-hidden p-6">
+            <AmbientCartoons world={Math.floor((currentLevel - 1) / LEVELS_PER_WORLD)} count={5} opacity={0.13} />
             <Sparkles width={86} height={86} className="pointer-events-none absolute -right-5 -top-5 text-leo-sun opacity-15" />
             <div className="shrink-0">
-              <Leo mood={greet.mood} size={185} bubble={bubble} />
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0, rotate: -8 }}
+                animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 200, damping: 14 }}
+              >
+                <Leo mood={greet.mood} size={185} bubble={bubble} />
+              </motion.div>
             </div>
             <div className="flex flex-col items-center gap-1.5">
               <DailyRing value={save.todayXp} />
@@ -337,7 +344,12 @@ export function Home({
                   {locked ? (
                     <Lock width={36} height={36} className="text-leo-ink-soft" />
                   ) : (
-                    <Sticker id={w.emblem} size={44} title={`${w.name} world`} />
+                    <motion.div
+                      animate={{ y: [0, -5, 0] }}
+                      transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut", delay: idx * 0.3 }}
+                    >
+                      <Sticker id={w.emblem} size={44} title={`${w.name} world`} />
+                    </motion.div>
                   )}
                   <span className="mt-1 font-display text-base font-bold text-leo-ink">{w.name}</span>
                   <span className="mt-0.5 line-clamp-2 min-h-8 text-[11px] leading-snug text-leo-ink-soft">
@@ -369,10 +381,11 @@ export function Home({
         <footer className="mt-auto pt-5">
           <div className="leo-card flex flex-wrap items-center justify-between gap-3 p-4">
             <div className="flex items-start gap-2 text-xs leading-relaxed text-leo-ink-soft">
-              <Laptop width={18} height={18} className="mt-0.5 shrink-0 text-leo-ink" />
+              <Sparkles width={18} height={18} className="mt-0.5 shrink-0 text-leo-ink" />
               <span>
                 <b className="font-display text-sm text-leo-ink">For grown-ups:</b> kid-safe by design —
-                no ads, no purchases, no chat. Progress saves on this device and works offline. Best on a laptop.
+                no ads, no purchases, no chat. Progress saves on this device and works offline —
+                on laptops, phones and tablets.
                 <span className="mt-0.5 block text-[10px] opacity-75">
                   Music: &ldquo;Carefree&rdquo;, &ldquo;Monkeys Spinning Monkeys&rdquo;, &ldquo;Sneaky Snitch&rdquo; by Kevin MacLeod
                   (incompetech.com) — licensed under CC BY 4.0.

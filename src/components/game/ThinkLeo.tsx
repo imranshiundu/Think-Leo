@@ -3,49 +3,49 @@
 /**
  * Think Leo — app root & view state machine
  * ─────────────────────────────────────────
- * boot → (mobile? PhoneGate — forever) → splash → home ⇄ map ⇄ play
+ * boot → splash → home ⇄ map ⇄ play
  * The whole experience is one route ("/") with client view switching,
  * which keeps the PWA instant and offline-friendly.
+ *
+ * Devices: laptops, phones and tablets all play. Every visit still has
+ * its hardware details detected and recorded (lib/deviceInfo.ts →
+ * /api/device + local log) so the parents' dashboard knows what the
+ * family plays on.
  */
 
 import { Home } from "@/components/game/Home";
 import { LevelMap } from "@/components/game/LevelMap";
 import { LevelUpOverlay } from "@/components/game/LevelUp";
-import { PhoneGate } from "@/components/game/PhoneGate";
 import { Play } from "@/components/game/Play";
 import { Splash } from "@/components/game/Splash";
 import { AchievementToasts } from "@/components/game/bits";
 import { detectDevice, watchDevice, type DeviceKind } from "@/lib/device";
-import { deviceSummary, getDeviceInfo, recordDevice } from "@/lib/deviceInfo";
+import { recordDevice } from "@/lib/deviceInfo";
 import { LEVELS_PER_WORLD, WORLDS } from "@/lib/game";
 import { sfx } from "@/lib/sound";
 import { useLeo } from "@/lib/store";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type View = "home" | "map" | "play";
 
 export default function ThinkLeo() {
   const [device, setDevice] = useState<DeviceKind | null>(null);
-  const [deviceLine, setDeviceLine] = useState("");
   const [view, setView] = useState<View>("home");
   const [focusWorld, setFocusWorld] = useState(0);
   const [levelIdx, setLevelIdx] = useState(1);
   const [splashDone, setSplashDone] = useState(false);
-  const [gateAllow, setGateAllow] = useState(false); // "I AM on a laptop" escape hatch
 
   const hydrated = useLeo((s) => s._hydrated);
   const soundSfx = useLeo((s) => s.soundSfx);
   const soundMusic = useLeo((s) => s.soundMusic);
   const stars = useLeo((s) => s.stars);
 
-  /* device gate — phones & tablets never pass. Details are recorded
+  /* device detection — every kind plays; details are always recorded
      (locally + parents' dashboard) so every visit leaves a footprint. */
   useEffect(() => {
     const t = window.setTimeout(() => {
-      const kind = detectDevice();
-      setDevice(kind);
-      setDeviceLine(deviceSummary(getDeviceInfo()));
+      setDevice(detectDevice());
       recordDevice();
     }, 0);
     const un = watchDevice(setDevice);
@@ -53,11 +53,6 @@ export default function ThinkLeo() {
       window.clearTimeout(t);
       un();
     };
-  }, []);
-
-  /* "wait, I AM on a laptop" → re-run detection; also re-check on real focus */
-  const retryDevice = useCallback(() => {
-    setDevice(detectDevice());
   }, []);
 
   /* audio unlock on the first gesture (browser autoplay policy) */
@@ -101,9 +96,6 @@ export default function ThinkLeo() {
     return WORLDS.length * LEVELS_PER_WORLD;
   }, [stars]);
 
-  if (device === "mobile" && !gateAllow) {
-    return <PhoneGate onRetry={() => { setGateAllow(true); retryDevice(); }} deviceLine={deviceLine} />;
-  }
   if (device === null) return <div className="leo-bg fixed inset-0" />;
 
   return (

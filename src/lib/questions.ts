@@ -109,7 +109,8 @@ function numOptions(
 
 /* ── world-flavoured sticker pools ──────────────────────────────── */
 
-const WORLD_TILES: StickerId[][] = [
+/** Also used for ambient cartoons & victory parades (see components/game/ambient.tsx). */
+export const WORLD_TILES: StickerId[][] = [
   ["monkey", "parrot", "butterfly", "flower", "elephant"],
   ["fish", "octopus", "crab", "dolphin", "shell"],
   ["star", "rocket", "ufo", "moon", "comet"],
