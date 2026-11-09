@@ -583,6 +583,134 @@ class LeoSound {
     this.noise({ dur: 0.04, vol: 0.04, f0: 900, q: 2 });
   }
 
+  /* ── v4 hands-on game voices ─────────────────────────────────── */
+
+  /**
+   * Found one! (tap-the-target) — pitch climbs with every hit so a
+   * full sweep plays a rising scale, Candy-Crush style.
+   */
+  found(n: number) {
+    if (!this.guard()) return;
+    const step = Math.min(n, 10);
+    this.pluck(NOTE(step, 659.26), this.t0, 0.12, -0.15);
+    this.noise({ at: this.t0 + 0.02, dur: 0.1, vol: 0.02, f0: 6200, type: "highpass", wet: 0.3 });
+  }
+
+  /** Leo munching a snack (feed-Leo) — two soft crunches + happy lip. */
+  munch() {
+    if (!this.guard()) return;
+    const t = this.t0;
+    this.noise({ at: t, dur: 0.07, vol: 0.09, f0: 900, f1: 300, q: 1.2 });
+    this.noise({ at: t + 0.11, dur: 0.06, vol: 0.07, f0: 700, f1: 260, q: 1.2 });
+    this.tone(520, { at: t + 0.2, dur: 0.09, type: "sine", vol: 0.05, glide: 700 });
+  }
+
+  /** Boing — wrong tap inside a hands-on game (funny, never scary). */
+  boing() {
+    if (!this.guard()) return;
+    this.tone(300, { dur: 0.24, type: "triangle", vol: 0.1, glide: 110, filter: 1400 });
+  }
+
+  /** Curtain/wipe whoosh with a soft landing — level transitions. */
+  wipe() {
+    if (!this.guard()) return;
+    this.noise({ dur: 0.5, vol: 0.1, f0: 2600, f1: 300, q: 1.4, wet: 0.2 });
+    this.thud(this.t0 + 0.42, 0.16);
+  }
+
+  /* ── Leo Pop voices (the arcade) ─────────────────────────────── */
+
+  /**
+   * A creature lands. Pitch drops with size — big friends land HEAVY.
+   * vol scales too, so the jar feels physical, not cartoony-flat.
+   */
+  dropBall(tier: number) {
+    if (!this.guard()) return;
+    const t = this.t0;
+    const f = Math.max(70, 150 - tier * 9);
+    this.tone(f, { at: t, dur: 0.16, type: "sine", vol: 0.1 + tier * 0.012, glide: f * 0.55, attack: 0.003 });
+    this.noise({ at: t, dur: 0.05, vol: 0.04, f0: 900 + tier * 120, q: 1.1 });
+  }
+
+  /**
+   * THE sound of Leo Pop — the fusion pop. Pitch climbs with BOTH the
+   * creature tier and the chain step, so a cascade plays a rising
+   * melody (the dopamine ladder, §14.4). Every 3rd chain step adds a
+   * chime; big chains get the snare + arp fireworks.
+   */
+  mergePop(createdTier: number, chain = 1) {
+    if (!this.guard()) return;
+    const t = this.t0;
+    const step = Math.min(16, createdTier * 1.5 + (chain - 1) * 2);
+    const root = NOTE(step, 523.25);
+    // the pop: quick upward blip
+    this.tone(root * 0.75, { at: t, dur: 0.09, type: "sine", vol: 0.16, glide: root * 1.5 });
+    this.noise({ at: t, dur: 0.045, vol: 0.05, f0: 1800, q: 1.3 });
+    // the melody note
+    this.marimba(root, t + 0.02, 0.14, chain % 2 ? -0.2 : 0.2);
+    this.pluck(root * 1.5, t + 0.07, 0.09);
+    if (chain >= 3) this.chime(root * 2, t + 0.12, 0.07);
+    if (chain >= 5) {
+      this.snare(t + 0.1, 0.09);
+      [root * 2, root * 2.5].forEach((f, i) => this.pluck(f, t + 0.16 + i * 0.05, 0.08));
+    }
+  }
+
+  /** Tiny pop for popcorn cascades (pitch cycles so bursts sound alive). */
+  miniPop(i: number) {
+    if (!this.guard()) return;
+    const f = NOTE(i % 8, 659.26);
+    this.tone(f * 0.8, { dur: 0.06, type: "sine", vol: 0.1, glide: f * 1.4 });
+    this.noise({ dur: 0.03, vol: 0.03, f0: 2200, q: 1.2 });
+  }
+
+  /** The golden egg lands and wobbles — crack, crack… */
+  eggCrack() {
+    if (!this.guard()) return;
+    const t = this.t0;
+    this.noise({ at: t, dur: 0.05, vol: 0.08, f0: 2600, q: 2.2 });
+    this.noise({ at: t + 0.09, dur: 0.05, vol: 0.07, f0: 2100, q: 2.2 });
+    this.tone(720, { at: t + 0.02, dur: 0.1, type: "triangle", vol: 0.05, glide: 560 });
+  }
+
+  /** The egg bursts: a bright major arp — every outcome is a win. */
+  eggBurst() {
+    if (!this.guard()) return;
+    const t = this.t0;
+    this.duck();
+    this.noise({ at: t, dur: 0.16, vol: 0.07, f0: 1400, f1: 4200, q: 1.4, wet: 0.35 });
+    [0, 4, 7, 12].forEach((s, i) => this.marimba(NOTE(s, 659.26), t + i * 0.06, 0.13));
+    this.chime(NOTE(19, 659.26), t + 0.26, 0.08);
+  }
+
+  /** A brand-new creature joins the Zoo Book. */
+  discover() {
+    if (!this.guard()) return;
+    const t = this.t0;
+    this.duck();
+    [0, 4, 9].forEach((s, i) => this.chime(NOTE(s, 783.99), t + i * 0.09, 0.11));
+    this.noise({ at: t + 0.1, dur: 0.4, vol: 0.02, f0: 7200, type: "highpass", wet: 0.5 });
+  }
+
+  /** A LEO is born (or two fuse golden) — the roar of the arcade. */
+  goldenRoar() {
+    if (!this.guard()) return;
+    const t = this.t0;
+    this.duck();
+    this.roar(t + 0.08);
+    [0, 4, 7, 12, 16].forEach((s, i) => this.chime(NOTE(s, 523.25), t + 0.12 + i * 0.09, 0.1));
+    this.kick(t + 0.1, 0.3);
+    this.snare(t + 0.5, 0.12);
+  }
+
+  /** Run over — a gentle slide, an invitation to try again (never harsh). */
+  arcadeOver() {
+    if (!this.guard()) return;
+    const t = this.t0;
+    this.thud(t, 0.18);
+    [7, 3, 0].forEach((s, i) => this.horn(NOTE(s, 311.13), t + 0.1 + i * 0.2, 0.26, 0.055));
+  }
+
   /* ── Music: three real tracks with DJ-style crossfades ───────── */
 
   /**

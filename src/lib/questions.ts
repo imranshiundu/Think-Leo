@@ -22,20 +22,27 @@ export type QKind =
   | "sequence"
   | "multiply"
   | "truefalse"
-  | "memory";
+  | "memory"
+  // v4 — hands-on games ("kids get to DO something", not just numbers)
+  | "tapTarget" // tap every monkey in a mixed crowd — reaction + scanning
+  | "shadow" // match the animal to its silhouette — visual discrimination
+  | "pattern" // colour+shape patterns — pre-math logic without digits
+  | "feedLeo"; // drop exactly N snacks into Leo's bowl — counting you can feel
 
 export interface Question {
   key: string;
   kind: QKind;
   prompt: string; // kid-facing instruction
   display?: string; // big centered formula, e.g. "7 + 5 = ?"
-  tiles?: StickerId[]; // count grid / odd-one board
-  groups?: [StickerId[], StickerId[]]; // compare: two sticker plates
+  tiles?: StickerId[]; // count grid / odd-one board / tapTarget crowd
+  ask?: StickerId; // shadow: the animal to match
   seq?: (string | number)[]; // sequence tiles, "?" last
+  seqTokens?: string[]; // pattern: "circle-red" tokens, "?" last
   pads?: number[]; // memory: pad indices (0..3) in order
-  options: string[]; // numbers, "TRUE!"/"NOPE!", or sticker ids (oddOne)
+  want?: number; // feedLeo: how many snacks Leo wants
+  options: string[]; // numbers, "TRUE!"/"NOPE!", sticker ids or pattern tokens
   groupOptions?: [StickerId[], StickerId[]]; // compare options rendered as plates
-  answer: number; // index into options
+  answer: number; // index into options (-1 for judge-yourself mini-games)
   time: number; // seconds on the clock
   diff: number;
   tip: string; // Leo's gentle hint when missed
@@ -130,6 +137,12 @@ const ODD_GROUPS: { set: StickerId[]; similar: number[] }[] = [
 ];
 
 /* ── generators ─────────────────────────────────────────────────── */
+
+/** Every creature-ish sticker, for shadow matching. */
+const ANIMALS: StickerId[] = [
+  "monkey", "parrot", "elephant", "dog", "cat", "rabbit", "mouse",
+  "cow", "pig", "chicken", "sheep", "frog", "fox", "owl",
+];
 
 function genCount(rng: Rng, diff: number, world: number): Partial<Question> {
   const pool = WORLD_TILES[world] ?? WORLD_TILES[0];
@@ -370,13 +383,120 @@ function genMemory(rng: Rng, diff: number): Partial<Question> {
   };
 }
 
+/* ── v4 hands-on games ──────────────────────────────────────────── */
+
+function genTapTarget(rng: Rng, diff: number, world: number): Partial<Question> {
+  const pool = WORLD_TILES[world] ?? WORLD_TILES[0];
+  const decoyPool = WORLD_TILES[(world + 1) % WORLD_TILES.length];
+  const target = oneOf(rng, pool);
+  const howMany = clamp(3 + irnd(rng, 0, 1 + Math.floor(diff / 2)), 3, 6);
+  const crowdSize = clamp(9 + diff * 2, 9, 16);
+  const tiles: StickerId[] = [];
+  for (let i = 0; i < howMany; i++) tiles.push(target);
+  while (tiles.length < crowdSize) {
+    const t = rng() < 0.72 ? oneOf(rng, pool.filter((x) => x !== target)) : oneOf(rng, decoyPool);
+    tiles.push(t);
+  }
+  return {
+    prompt: `Tap all the ${target}s!`,
+    tiles: shuffled(rng, tiles),
+    ask: target,
+    options: [],
+    answer: -1,
+    time: 8 + crowdSize * 1.6,
+    tip: "Scan row by row — like reading, but with eyes wide open!",
+  };
+}
+
+function genShadow(rng: Rng, diff: number, world: number): Partial<Question> {
+  const locals = WORLD_TILES[world] ?? WORLD_TILES[0];
+  const ask = oneOf(rng, ANIMALS);
+  const decoys = shuffled(
+    rng,
+    ANIMALS.filter((a) => a !== ask).concat(locals.filter((l) => l !== ask))
+  ).slice(0, Math.min(3, 2 + Math.floor(diff / 2)));
+  const all = shuffled(rng, [ask, ...decoys]);
+  return {
+    prompt: "Whose shadow is this? Tap the match!",
+    ask,
+    options: all,
+    answer: all.indexOf(ask),
+    time: questionTime(diff),
+    tip: "Look at the ears and the tail — shadows can't hide those!",
+  };
+}
+
+/**
+ * v5 — patterns are made of ANIMAL FRIENDS now, not abstract coloured
+ * shapes. "Monkey, fox, monkey, fox… who's next?" is something a 4-year-old
+ * can say out loud and SEE; "purple square" was a puzzle for nobody.
+ * The rule is the same (find the repeating unit), the art is concrete.
+ */
+function genPattern(rng: Rng, diff: number): Partial<Question> {
+  const cast = shuffled(rng, ANIMALS);
+  let unit: StickerId[];
+  let tip: string;
+  if (diff <= 1) {
+    unit = [cast[0], cast[1]];
+    tip = `Say it out loud: ${cast[0]}, ${cast[1]}, ${cast[0]}, ${cast[1]}…`;
+  } else if (diff === 2) {
+    unit = rng() < 0.5 ? [cast[0], cast[0], cast[1]] : [cast[0], cast[1], cast[1]];
+    tip = "Someone loves to go twice — watch who!";
+  } else if (diff === 3) {
+    unit = [cast[0], cast[1], cast[2]];
+    tip = "Three friends take turns — sing the pattern!";
+  } else {
+    unit = [cast[0], cast[0], cast[1], cast[1]];
+    tip = "Two of each, in pairs — A, A, B, B…";
+  }
+  // units shown: enough to make the repeat obvious, never overwhelming
+  const repeats = diff >= 3 ? 2 : 3;
+  const shown: StickerId[] = [];
+  for (let r = 0; r < repeats; r++) shown.push(...unit);
+  const correct = unit[0];
+  // decoys are animals from OUTSIDE the pattern — clearly not "next"
+  const outsiders = cast.slice(3).filter((a) => !unit.includes(a));
+  const decoys = shuffled(rng, outsiders).slice(0, diff <= 2 ? 2 : 3);
+  const all = shuffled(rng, [correct, ...decoys]);
+  return {
+    prompt: "What comes next in the pattern?",
+    seqTokens: [...shown, "?"],
+    options: all,
+    answer: all.indexOf(correct),
+    time: questionTime(diff) + 6, // little eyes scan pictures — give them room
+    tip,
+  };
+}
+
+function genFeedLeo(rng: Rng, diff: number, world: number): Partial<Question> {
+  const snacks: StickerId[] =
+    world === 3
+      ? ["candy", "lollipop", "cupcake", "donut", "cookie"]
+      : ["apple", "banana", "grapes", "strawberry"];
+  const snack = oneOf(rng, snacks);
+  const want = clamp(3 + irnd(rng, 0, diff + 1), 3, 9);
+  return {
+    prompt: `Leo wants ${want} ${snack}s. Feed him, then tap DONE!`,
+    ask: snack,
+    want,
+    options: [],
+    answer: -1,
+    time: 9 + want * 2.6,
+    tip: "Drop one snack at a time and count out loud!",
+  };
+}
+
 /* ── assembly ───────────────────────────────────────────────────── */
 
 const POOLS: QKind[][] = [
-  ["count", "addsub", "oddOne", "sequence", "truefalse", "compare"],
-  ["addsub", "compare", "sequence", "oddOne", "truefalse", "count"],
-  ["multiply", "sequence", "memory", "truefalse", "oddOne", "compare"],
-  ["multiply", "memory", "sequence", "truefalse", "addsub", "oddOne"],
+  // Jungle Jam: gentle numbers + hands-on fun
+  ["count", "addsub", "oddOne", "sequence", "truefalse", "compare", "tapTarget", "shadow", "pattern", "feedLeo"],
+  // Coral Cove
+  ["addsub", "compare", "sequence", "oddOne", "truefalse", "count", "shadow", "pattern", "feedLeo", "tapTarget"],
+  // Space Hop
+  ["multiply", "sequence", "memory", "truefalse", "oddOne", "compare", "pattern", "tapTarget"],
+  // Candy Peak: the big championship mix
+  ["multiply", "memory", "sequence", "truefalse", "addsub", "oddOne", "feedLeo", "shadow", "tapTarget", "pattern"],
 ];
 
 /** Deterministic per level: which 8 mini-games does this level hold? */
@@ -413,6 +533,10 @@ export function makeQuestion(
     case "multiply": body = genMultiply(rng, diff); break;
     case "truefalse": body = genTrueFalse(rng, diff); break;
     case "memory": body = genMemory(rng, diff); break;
+    case "tapTarget": body = genTapTarget(rng, diff, world); break;
+    case "shadow": body = genShadow(rng, diff, world); break;
+    case "pattern": body = genPattern(rng, diff); break;
+    case "feedLeo": body = genFeedLeo(rng, diff, world); break;
   }
   return {
     key: `L${levelIdx}A${attempt}Q${qIndex}`,

@@ -33,6 +33,15 @@ interface Sprite {
   spin: number; // rotation amplitude
 }
 
+/** Deterministic LCG — a factory so no captured variable mutates during render. */
+function lcg(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
 export function AmbientCartoons({
   world,
   count = 8,
@@ -44,11 +53,7 @@ export function AmbientCartoons({
 }) {
   const sprites = useMemo<Sprite[]>(() => {
     const pool = POOLS[world] ?? POOLS[0];
-    let s = 42 + world * 977 + count * 131; // per-(world,count) constellation
-    const rnd = () => {
-      s = (s * 1664525 + 1013904223) % 4294967296;
-      return s / 4294967296;
-    };
+    const rnd = lcg(42 + world * 977 + count * 131); // per-(world,count) constellation
     return Array.from({ length: count }, (_, i) => ({
       id: i,
       sticker: pool[Math.floor(rnd() * pool.length)],

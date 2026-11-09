@@ -22,10 +22,10 @@ const nunito = Nunito({
 export const metadata: Metadata = {
   title: "Think Leo — Brain Quests for Kids",
   description:
-    "Roar into brain quests with Leo the lion! Levels, streaks, combos and stars — a playful thinking game for curious kids. Best on a laptop.",
+    "Roar into brain quests with Leo the lion! Levels, streaks, combos and stars — a playful thinking game made for kids on phones and tablets.",
   applicationName: "Think Leo",
   manifest: "/manifest.webmanifest",
-  keywords: ["kids", "brain games", "puzzles", "learning", "Think Leo", "PWA"],
+  keywords: ["kids", "brain games", "puzzles", "learning", "Think Leo"],
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -45,6 +45,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: "cover", // keep the HUD clear of notches and home bars
 };
 
 export default function RootLayout({

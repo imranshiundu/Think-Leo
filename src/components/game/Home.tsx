@@ -28,11 +28,13 @@ import {
   ACH_DEFINITIONS,
   LEVELS_PER_WORLD,
   WORLDS,
+  finishedCount,
+  isUnlocked,
   leagueOf,
   leoGreeting,
   playerLevelFromXp,
 } from "@/lib/game";
-import { useComeback, useLeo, useQuests } from "@/lib/store";
+import { useComeback, useLeo, useMergeEggReady, useQuests, useZooProgress } from "@/lib/store";
 import { sfx } from "@/lib/sound";
 import { motion } from "framer-motion";
 import {
@@ -64,14 +66,18 @@ const ACH_SHELF = Object.values(ACH_DEFINITIONS);
 export function Home({
   onPlay,
   onMap,
+  onArcade,
 }: {
   onPlay: () => void; // jumps straight into the current level
   onMap: (worldId: number) => void;
+  onArcade: () => void; // opens LEO POP, the merge arcade
 }) {
   const save = useLeo();
   const greet = useMemo(() => leoGreeting(), []);
   const quests = useQuests();
   const comeback = useComeback();
+  const eggReady = useMergeEggReady();
+  const zoo = useZooProgress();
 
   const [installEvt, setInstallEvt] = useState<InstallPromptEvent | null>(null);
   useEffect(() => {
@@ -86,7 +92,7 @@ export function Home({
   const lvl = playerLevelFromXp(save.xp);
   const league = leagueOf(save.weekXp);
   const totalStars = Object.values(save.stars).reduce((a, b) => a + b, 0);
-  const levelsDone = Object.values(save.stars).filter((s) => s > 0).length;
+  const levelsDone = finishedCount(save.stars, save.done);
 
   const currentLevel = useMemo(() => {
     for (let i = 1; i <= WORLDS.length * LEVELS_PER_WORLD; i++) {
@@ -125,7 +131,7 @@ export function Home({
 
   return (
     <div className="leo-bg h-screen w-full overflow-y-auto leo-scroll">
-      <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pb-5 pt-4 md:px-8">
+      <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 md:px-8">
         {/* ── top bar ── */}
         <header className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">
@@ -237,6 +243,84 @@ export function Home({
           </div>
         </section>
 
+        {/* ── LEO POP — the arcade ── (a div with button semantics: the
+            PLAY chunky-button inside must not nest <button> in <button>) */}
+        <section className="mt-4">
+          <motion.div
+            role="button"
+            tabIndex={0}
+            onClick={onArcade}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") onArcade();
+            }}
+            whileTap={{ scale: 0.98 }}
+            className="leo-card relative flex w-full cursor-pointer items-center gap-4 overflow-hidden border-[3px] p-5 text-left"
+            style={{ background: "linear-gradient(120deg,#ffe9f1 0%,#f3e9ff 55%,#fff3c4 100%)" }}
+            aria-label="Open LEO POP, the merge arcade"
+          >
+            <Sparkles width={90} height={90} className="pointer-events-none absolute -right-4 -top-6 text-leo-berry opacity-15" />
+            {eggReady && (
+              <span className="anim-pulse-ring absolute right-4 top-4 rounded-full border-[2.5px] border-leo-sun bg-white px-2.5 py-0.5 font-display text-[10px] font-bold text-leo-sun-deep">
+                Daily egg ready!
+              </span>
+            )}
+            <motion.div
+              className="relative shrink-0"
+              animate={{ y: [0, -7, 0], rotate: [-3, 3, -3] }}
+              transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <span
+                className="flex h-[72px] w-[72px] items-center justify-center rounded-full border-[3px] border-[#F5C860]"
+                style={{ background: "radial-gradient(circle at 32% 28%, #ffffff 8%, #FFE49A 62%)" }}
+              >
+                <Sticker id="lion" size={56} />
+              </span>
+              <motion.span
+                className="absolute -left-3 -top-1"
+                animate={{ y: [0, -5, 0] }}
+                transition={{ duration: 1.8, repeat: Infinity, delay: 0.3 }}
+              >
+                <Sticker id="ladybug" size={22} />
+              </motion.span>
+              <motion.span
+                className="absolute -bottom-1 -right-3"
+                animate={{ y: [0, -4, 0] }}
+                transition={{ duration: 2.1, repeat: Infinity, delay: 0.8 }}
+              >
+                <Sticker id="bee" size={22} />
+              </motion.span>
+            </motion.div>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-display text-2xl font-bold leading-none text-leo-ink">
+                LEO <span className="bg-gradient-to-r from-leo-berry to-leo-grape bg-clip-text text-transparent">POP</span>
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-leo-ink-soft">
+                Drop friends in the jar, fuse two of a kind, grow the zoo — no maths, just popping fun.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="pill px-2.5 py-0.5 text-[11px] text-leo-ink">
+                  <Trophy width={12} height={12} className="text-leo-sun-deep" /> Best {save.mergeBest}
+                </span>
+                <span className="pill px-2.5 py-0.5 text-[11px] text-leo-ink">
+                  <Star width={12} height={12} className="fill-leo-sun text-leo-sun-deep" /> Zoo {zoo.found}/{zoo.target}
+                </span>
+                {zoo.golden && (
+                  <span className="pill px-2.5 py-0.5 text-[11px] text-leo-ink">
+                    <Crown width={12} height={12} className="text-leo-sun-deep" /> Golden Leo
+                  </span>
+                )}
+              </div>
+            </div>
+            <span onClick={(e) => e.stopPropagation()} className="shrink-0">
+              <ChunkyButton color="berry" onClick={onArcade} ariaLabel="Play Leo Pop">
+                <span className="inline-flex items-center gap-1.5">
+                  <Play width={16} height={16} className="fill-white" /> PLAY
+                </span>
+              </ChunkyButton>
+            </span>
+          </motion.div>
+        </section>
+
         {/* ── daily quests ── */}
         <section className="mt-4">
           <div className="mb-2 flex items-center justify-between">
@@ -326,7 +410,7 @@ export function Home({
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {WORLDS.map((w, idx) => {
               const firstLevel = idx * LEVELS_PER_WORLD + 1;
-              const locked = firstLevel > 1 && (save.stars[firstLevel - 1] ?? 0) < 1;
+              const locked = !isUnlocked(firstLevel, save.stars, save.done);
               const stars = worldStars(idx);
               return (
                 <motion.button
@@ -353,7 +437,9 @@ export function Home({
                   )}
                   <span className="mt-1 font-display text-base font-bold text-leo-ink">{w.name}</span>
                   <span className="mt-0.5 line-clamp-2 min-h-8 text-[11px] leading-snug text-leo-ink-soft">
-                    {locked ? "Earn a star on the previous world to unlock" : w.tagline}
+                    {locked
+                      ? `Finish 3 levels in ${WORLDS[idx - 1]?.name ?? "the previous world"} to open`
+                      : w.tagline}
                   </span>
                   <div className="mt-2">
                     <StarRow n={Math.round((stars / (LEVELS_PER_WORLD * 3)) * 3)} size={15} />
@@ -377,15 +463,15 @@ export function Home({
           <StreakStrip playDays={save.playDays} streak={save.streak} />
         </section>
 
-        {/* ── parents / install ── */}
+        {/* ── grown-ups / add to home screen ── */}
         <footer className="mt-auto pt-5">
           <div className="leo-card flex flex-wrap items-center justify-between gap-3 p-4">
             <div className="flex items-start gap-2 text-xs leading-relaxed text-leo-ink-soft">
               <Sparkles width={18} height={18} className="mt-0.5 shrink-0 text-leo-ink" />
               <span>
                 <b className="font-display text-sm text-leo-ink">For grown-ups:</b> kid-safe by design —
-                no ads, no purchases, no chat. Progress saves on this device and works offline —
-                on laptops, phones and tablets.
+                no ads, no purchases, no chat. Progress saves on this device and keeps working with no
+                internet. Made for phones and tablets — laptops love it too.
                 <span className="mt-0.5 block text-[10px] opacity-75">
                   Music: &ldquo;Carefree&rdquo;, &ldquo;Monkeys Spinning Monkeys&rdquo;, &ldquo;Sneaky Snitch&rdquo; by Kevin MacLeod
                   (incompetech.com) — licensed under CC BY 4.0.
@@ -400,10 +486,10 @@ export function Home({
                   void installEvt.prompt();
                   setInstallEvt(null);
                 }}
-                ariaLabel="Install Think Leo on this device"
+                ariaLabel="Add Think Leo to your home screen"
               >
                 <span className="inline-flex items-center gap-1.5">
-                  <Download width={15} height={15} /> Install app
+                  <Download width={15} height={15} /> Add to Home Screen
                 </span>
               </ChunkyButton>
             )}

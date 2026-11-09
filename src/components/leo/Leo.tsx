@@ -15,6 +15,8 @@
  *   sad         open + downturn   frown     down     slow droop sway
  *   thinking    pupil up-right    flat      chin     held still, brow raised
  *   celebrate   STARS             open      up       dance + sparkles
+ *   wow         WIDE              ooh       down     pop-jump, sparkle
+ *   cheer       STARS             open      up       big jumps + spin-twist
  *   sleep       closed            flat      down     slow breathe
  */
 
@@ -28,7 +30,7 @@ interface Look {
   brow?: "sad" | "think";
   mouth: "smile" | "open" | "frown" | "flat" | "ooh";
   paws: "down" | "up" | "chin";
-  bob: "idle" | "bounce" | "dance" | "droop" | "still" | "sleep";
+  bob: "idle" | "bounce" | "dance" | "droop" | "still" | "sleep" | "jump" | "cheer";
 }
 
 const LOOKS: Record<Mood, Look> = {
@@ -38,6 +40,8 @@ const LOOKS: Record<Mood, Look> = {
   sad:       { eyes: "open",   pupil: [0, 3],    mouth: "frown", paws: "down", brow: "sad",   bob: "droop" },
   thinking:  { eyes: "open",   pupil: [2.5, -3], mouth: "flat",  paws: "chin", brow: "think", bob: "still" },
   celebrate: { eyes: "star",   pupil: [0, 0],    mouth: "open",  paws: "up",   bob: "dance" },
+  wow:       { eyes: "wide",   pupil: [0, 1],    mouth: "ooh",   paws: "down", bob: "jump" },
+  cheer:     { eyes: "star",   pupil: [0, 0],    mouth: "open",  paws: "up",   bob: "cheer" },
   sleep:     { eyes: "closed", pupil: [0, 0],    mouth: "flat",  paws: "down", bob: "sleep" },
 };
 
@@ -72,6 +76,16 @@ const BOB_VARIANTS: Record<Look["bob"], TargetAndTransition> = {
   droop: { rotate: [0, -1.6, 0], transition: { duration: 3.4, repeat: Infinity, ease: "easeInOut" } },
   still: {},
   sleep: { scaleY: [1, 1.04, 1], transition: { duration: 3.4, repeat: Infinity, ease: "easeInOut" } },
+  /* wow: one surprised pop-jump, then a wobble — used for the RUSH intro */
+  jump: {
+    y: [0, -30, 0, -10, 0], scaleY: [1, 1.12, 0.9, 1.04, 1],
+    transition: { duration: 0.85, repeat: Infinity, repeatDelay: 0.5, ease: "easeOut" },
+  },
+  /* cheer: full victory jumps with a hip twist — 3-star runs */
+  cheer: {
+    y: [0, -26, 0, -26, 0], rotate: [0, -7, 0, 7, 0], scaleY: [1, 1.08, 1, 1.08, 1],
+    transition: { duration: 0.95, repeat: Infinity, ease: "easeOut" },
+  },
 };
 
 export interface LeoProps {
@@ -83,7 +97,7 @@ export interface LeoProps {
 
 export function Leo({ mood = "idle", size = 200, className = "", bubble = null }: LeoProps) {
   const look = LOOKS[mood] ?? LOOKS.idle;
-  const sparkle = mood === "celebrate" || mood === "excited";
+  const sparkle = mood === "celebrate" || mood === "excited" || mood === "cheer" || mood === "wow";
 
   return (
     <div className={`relative inline-block ${className}`} style={{ width: size }}>
