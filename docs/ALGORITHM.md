@@ -496,11 +496,16 @@ Parents never see the letters "PWA" — the app simply **installs and works**:
   `launch_handler: navigate-existing`), theme `#FFB020`, maskable + any
   icons — so "Add to Home Screen" gives a real app icon and a real
   full-screen app on phones and tablets.
-- `public/sw.js` **v3**: precaches the shell, icons and the three music
-  tracks; cache-first for `/_next/static`, icons and `/audio/*`; network-first
-  for navigations with cached-shell fallback → **the game fully boots and
-  sounds right with no internet**. `SKIP_WAITING` + `clients.claim()` plus a
-  controller-change reload keep installed apps auto-updated.
+- `public/sw.js` **v5**: precaches the shell, icons and the three music
+  tracks; **network-first for all code (`_next/*`, js, css) and
+  navigations** — while the kid is online every launch pulls the newest
+  build, and the cached copy is only the offline fallback (v3/v4 cached
+  code first, which let devices keep running an old build after fixes —
+  the "still broken" bug, §17). Icons/audio/manifest stay cache-first
+  (immutable). → **the game fully boots and sounds right with no
+  internet, and is never stale online**. `SKIP_WAITING` +
+  `clients.claim()` plus a controller-change reload keep installed apps
+  auto-updated; installing v5 deletes every v1–v4 cache on the device.
 - Registration happens at the root layout, so the installed app updates
   itself on any device.
 - `viewport-fit: cover` + `env(safe-area-inset-bottom)` padding keep the HUD
@@ -750,3 +755,70 @@ screen) is deleted from the question factory, the play screen and both
 simulation scripts. A four-year-old never has to parse an abstract
 sequence again — pattern-hunting moved to where it belongs: the feed,
 where the pattern is "maybe THIS one is the golden one".
+
+---
+
+## 17. v8 — the staleness bug, and the E2E proof run
+
+### 17.1 The bug that made every fix invisible (the real root cause)
+
+Report: *"now, it's not working"* — while the code on disk was correct.
+Diagnosis in a real browser: the page was controlled by the **v4
+service worker**, which served **`_next/static` and every `.js` chunk
+cache-first**. In dev (Turbopack) a chunk's URL never changes, only its
+content does — so every device kept executing the **old build forever**,
+no matter how many bugs were fixed on disk. Three reported symptoms were
+all stale-code ghosts:
+
+| Report | What the stale build showed | What the disk code actually did |
+| --- | --- | --- |
+| "it's not working" | a Feed-Leo snack bowl bolted onto every *shadow* round (`kind === "shadow"` conditioned the bowl) | the bowl keys on `kind === "feedLeo"` only (fixed in Play.tsx) |
+| "Think leo leo" typo-graphy | the splash swapped every "L" for the string "Leo!" while `e`, `o`, `!` still rendered → wordmark read "Think Leo!eo!" | "Think " pops letter-by-letter + "Leo!" pops as ONE gradient word (fixed in Splash.tsx) |
+| literal `{feedPulls === 1 ? …}` on a feed card | a template string missing its `$` | `` `${feedPulls} ${…} opened · the feed never ends` `` (fixed in FeedGame.tsx) |
+
+**The fix (`public/sw.js` v5):** code and navigations are
+**network-first** — online launches always fetch the newest build, the
+cache is only the offline fallback; icons/music/manifest stay
+cache-first (immutable); installing v5 **deletes every v1–v4 cache** on
+the device, and the existing `SKIP_WAITING` → controller-change reload
+pipeline swaps the running worker without a second tap. Verified live:
+unregister v4 → wipe caches → reload → `think-leo-v5` active → the
+shadow round renders clean.
+
+### 17.2 The browser proof run (E2E, real clicks)
+
+Driven with a headless browser at phone/desktop viewports, after the v5
+swap, with screenshots at every step:
+
+1. **Level 1** — all 8 rounds answered live (count · shadow · compare ·
+   shadow · shadow · count · shadow), no bowl on any shadow round;
+   **LEO RUSH** fired; 12 s hard timer expired the rush even with no
+   input; **"Level complete!"** — 3 stars, 100% accuracy, +33 XP, "New
+   best score!", "Welcome to the Bronze league!", PLAYER LEVEL 2.
+2. **Level 2** — completed including the **Feed Leo** round: dropped 3
+   apples (bowl showed "3 in the bowl · Leo wants 6"), then 3 more
+   ("6 in the bowl" turned green, DONE! turned green), tap DONE →
+   LEO RUSH with the **"UNSTOPPABLE!"** ×7-combo banner → complete.
+3. **Map** — Levels 1–2 show 3 gold stars each, Level 3 marked
+   "your next quest", Levels 4–10 locked; Leo stands beside the
+   current level.
+4. **LEO FEED** — daily MEGA gift ("Leo picked this for you") shook,
+   revealed **Hop the Bunny (COMMON)**: +2 XP, +7 Spark
+   (purse 10 → 17), album 0/16 → 1/16, footer
+   *"1 card opened · the feed never ends"*; NEXT → second card
+   **Nugget (COMMON)**: 2/16, Spark 17 → 24, pluralised footer correct.
+5. **LEO EGGS** — nest egg ready, hold-to-crack ritual, **Ember the Fox
+   (RARE)** hatched: +5★, +3 XP, album +1, badge toast **"First Crack
+   · +40 XP"** fired top-right.
+6. **LEO POP** — physics jar: dropped 3 mice, **two fused into a frog**,
+   score 0 → 6, NEXT preview advanced.
+7. **Offline** — `offline on` → reload → the **full home screen booted
+   from the v5 cache** (streak, XP, stars, Level 3 ready to play).
+
+### 17.3 The update contract going forward
+
+Because of §17.1 the project now has one invariant, same spirit as the
+ONE-economy rule: **a fix that never reaches the device is not a fix.**
+Network-first code (v5) is what makes every future change land on the
+next launch — online. (Offline launches get the last-good build; that
+is the trade the install contract promises.)
