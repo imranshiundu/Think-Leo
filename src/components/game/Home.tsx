@@ -10,6 +10,7 @@
 import { Leo } from "@/components/leo/Leo";
 import { ChestArt } from "@/components/leo/badges";
 import { AmbientCartoons } from "@/components/game/ambient";
+import { CssEgg } from "@/components/eggs/EggGame";
 import { Sticker } from "@/components/leo/stickers";
 import {
   ChunkyButton,
@@ -34,13 +35,14 @@ import {
   leoGreeting,
   playerLevelFromXp,
 } from "@/lib/game";
-import { useComeback, useLeo, useMergeEggReady, useQuests, useZooProgress } from "@/lib/store";
+import { useComeback, useEggCollection, useEggNest, useLeo, useMergeEggReady, useQuests, useZooProgress } from "@/lib/store";
 import { sfx } from "@/lib/sound";
 import { motion } from "framer-motion";
 import {
   Brain,
   Crown,
   Download,
+  Egg,
   Flame,
   Gem,
   Lock,
@@ -67,10 +69,12 @@ export function Home({
   onPlay,
   onMap,
   onArcade,
+  onEggs,
 }: {
   onPlay: () => void; // jumps straight into the current level
   onMap: (worldId: number) => void;
   onArcade: () => void; // opens LEO POP, the merge arcade
+  onEggs: () => void; // opens LEO EGGS, the surprise-egg arcade
 }) {
   const save = useLeo();
   const greet = useMemo(() => leoGreeting(), []);
@@ -78,6 +82,8 @@ export function Home({
   const comeback = useComeback();
   const eggReady = useMergeEggReady();
   const zoo = useZooProgress();
+  const nest = useEggNest();
+  const eggs = useEggCollection();
 
   const [installEvt, setInstallEvt] = useState<InstallPromptEvent | null>(null);
   useEffect(() => {
@@ -313,6 +319,72 @@ export function Home({
             </div>
             <span onClick={(e) => e.stopPropagation()} className="shrink-0">
               <ChunkyButton color="berry" onClick={onArcade} ariaLabel="Play Leo Pop">
+                <span className="inline-flex items-center gap-1.5">
+                  <Play width={16} height={16} className="fill-white" /> PLAY
+                </span>
+              </ChunkyButton>
+            </span>
+          </motion.div>
+        </section>
+
+        {/* ── LEO EGGS — the surprise-egg arcade ── (a div with button
+            semantics: the PLAY chunky-button inside must not nest
+            <button> in <button>) */}
+        <section className="mt-4">
+          <motion.div
+            role="button"
+            tabIndex={0}
+            onClick={onEggs}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") onEggs();
+            }}
+            whileTap={{ scale: 0.98 }}
+            className="leo-card relative flex w-full cursor-pointer items-center gap-4 overflow-hidden border-[3px] p-5 text-left"
+            style={{ background: "linear-gradient(120deg,#fff3c4 0%,#ffeef6 55%,#f3e9ff 100%)" }}
+            aria-label="Open LEO EGGS, the surprise-egg arcade"
+          >
+            {nest.ready && (
+              <span className="anim-pulse-ring absolute right-4 top-4 rounded-full border-[2.5px] border-leo-berry bg-white px-2.5 py-0.5 font-display text-[10px] font-bold text-leo-berry-deep">
+                Nest egg ready!
+              </span>
+            )}
+            <motion.div
+              className="relative shrink-0"
+              animate={{ y: [0, -7, 0], rotate: [-4, 4, -4] }}
+              transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <CssEgg kind="spark" size={70} />
+              <motion.span
+                className="absolute -right-3 -top-1"
+                animate={{ rotate: [0, 14, 0] }}
+                transition={{ duration: 2.2, repeat: Infinity, delay: 0.4 }}
+              >
+                <Sparkles width={20} height={20} className="text-leo-berry" />
+              </motion.span>
+            </motion.div>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-display text-2xl font-bold leading-none text-leo-ink">
+                LEO <span className="bg-gradient-to-r from-leo-sun-deep to-leo-berry bg-clip-text text-transparent">EGGS</span>
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-leo-ink-soft">
+                Hold an egg, hear it crack, meet the friend inside — then do it again. Collect them all.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="pill px-2.5 py-0.5 text-[11px] text-leo-ink">
+                  <Egg width={12} height={12} className="text-leo-berry-deep" /> {eggs.found}/{eggs.target} friends
+                </span>
+                <span className="pill px-2.5 py-0.5 text-[11px] text-leo-ink">
+                  <Star width={12} height={12} className="fill-leo-sun text-leo-sun-deep" /> {save.eggStars} egg stars
+                </span>
+                {save.streak >= 1 && (
+                  <span className="pill px-2.5 py-0.5 text-[11px] text-leo-ink">
+                    <Flame width={12} height={12} className="text-leo-sun-deep" /> streak luck +{Math.min(12, save.streak * 2)}%
+                  </span>
+                )}
+              </div>
+            </div>
+            <span onClick={(e) => e.stopPropagation()} className="shrink-0">
+              <ChunkyButton color="berry" onClick={onEggs} ariaLabel="Play Leo Eggs">
                 <span className="inline-flex items-center gap-1.5">
                   <Play width={16} height={16} className="fill-white" /> PLAY
                 </span>

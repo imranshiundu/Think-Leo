@@ -12,6 +12,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Brain,
   Crown,
+  Egg,
   Flame,
   Gem,
   Gift,
@@ -479,7 +480,7 @@ export function KindChip({ icon, label }: { icon: string; label?: string }) {
 
 /* ── Quest board widgets (§13.1) ───────────────────────────────── */
 
-const QUEST_ICONS = { zap: Zap, brain: Brain, map: Map, star: Star, rocket: Rocket, flame: Flame } as const;
+const QUEST_ICONS = { zap: Zap, brain: Brain, map: Map, star: Star, rocket: Rocket, flame: Flame, egg: Egg } as const;
 
 export function QuestRow({
   quest,

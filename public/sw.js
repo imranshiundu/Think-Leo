@@ -1,14 +1,17 @@
-/* Think Leo — offline service worker v3
+/* Think Leo — offline service worker v4
  * ─────────────────────────────────────
- * The PWA contract: install it, launch it from the home screen, and it
+ * The install contract: add it to the home screen, launch it, and it
  * works even with the Wi-Fi off. Strategy:
  *   · app shell + icons + audio  → precached at install
  *   · static assets (_next/*)    → cache-first (immutable, versioned)
  *   · music (/audio/*.mp3)       → cache-first, streamed from disk cache
  *   · navigations                → network-first, offline → cached "/"
  *   · /api/*                     → network-only (device log is fire-and-forget)
+ *
+ * v4 — new offline shell for LEO EGGS + a forced cache refresh so every
+ * device leaves the old build behind (phones were still serving v3).
  */
-const VERSION = "think-leo-v3";
+const VERSION = "think-leo-v4";
 const CORE = [
   "/",
   "/manifest.webmanifest",

@@ -3,7 +3,7 @@
 /**
  * Think Leo — app root & view state machine
  * ─────────────────────────────────────────
- * boot → splash → home ⇄ map ⇄ play, home ⇄ arcade
+ * boot → splash → home ⇄ map ⇄ play, home ⇄ arcade ⇄ eggs
  * The whole experience is one route ("/") with client view switching,
  * which keeps the installed app instant and offline-friendly.
  *
@@ -19,6 +19,7 @@ import { LevelUpOverlay } from "@/components/game/LevelUp";
 import { Play } from "@/components/game/Play";
 import { Splash } from "@/components/game/Splash";
 import { LeoPop } from "@/components/arcade/LeoPop";
+import { EggGame } from "@/components/eggs/EggGame";
 import { AchievementToasts } from "@/components/game/bits";
 import { detectDevice, watchDevice, type DeviceKind } from "@/lib/device";
 import { recordDevice } from "@/lib/deviceInfo";
@@ -30,7 +31,7 @@ import { Leo } from "@/components/leo/Leo";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type View = "home" | "map" | "play" | "arcade";
+type View = "home" | "map" | "play" | "arcade" | "eggs";
 
 export default function ThinkLeo() {
   const [device, setDevice] = useState<DeviceKind | null>(null);
@@ -118,6 +119,18 @@ export default function ThinkLeo() {
     });
   }, []);
 
+  /* the egg game gets a sunrise curtain — warm like a shell */
+  const [eggWipe, setEggWipe] = useState(false);
+  const goEggs = useCallback(() => {
+    setEggWipe((cur) => {
+      if (cur) return cur;
+      sfx.wipe();
+      window.setTimeout(() => setView("eggs"), 560);
+      window.setTimeout(() => setEggWipe(false), 1250);
+      return true;
+    });
+  }, []);
+
   /* next unmastered level */
   const currentLevel = useMemo(() => {
     for (let i = 1; i <= WORLDS.length * LEVELS_PER_WORLD; i++) {
@@ -144,6 +157,7 @@ export default function ThinkLeo() {
 
       <AnimatePresence>{wipe !== null && <LevelWipe key="wipe" level={wipe} />}</AnimatePresence>
       <AnimatePresence>{arcadeWipe && <ArcadeWipe key="arcade-wipe" />}</AnimatePresence>
+      <AnimatePresence>{eggWipe && <EggWipe key="egg-wipe" />}</AnimatePresence>
 
       <motion.div
         key={view}
@@ -165,6 +179,10 @@ export default function ThinkLeo() {
             onArcade={() => {
               sfx.click();
               goArcade();
+            }}
+            onEggs={() => {
+              sfx.click();
+              goEggs();
             }}
           />
         )}
@@ -191,6 +209,8 @@ export default function ThinkLeo() {
         )}
 
         {view === "arcade" && <LeoPop key="arcade" onExit={() => setView("home")} />}
+
+        {view === "eggs" && <EggGame key="eggs" onExit={() => setView("home")} />}
       </motion.div>
     </>
   );
@@ -269,6 +289,51 @@ function ArcadeWipe() {
           <div className="text-left">
             <div className="font-display text-sm font-bold uppercase tracking-widest text-white/90">Think Leo presents</div>
             <div className="font-display text-4xl font-bold text-white text-outline-sm">LEO POP</div>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ── the egg curtain: a sunrise burst with a hatching egg + Leo cub ── */
+function EggWipe() {
+  return (
+    <motion.div
+      className="pointer-events-none fixed inset-0 z-[85] flex items-center justify-center"
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.45, ease: "easeOut" } }}
+    >
+      <motion.div
+        className="absolute inset-0"
+        style={{ background: "linear-gradient(135deg, #ffb020, #ff5a8c 55%, #9b5de5)" }}
+        initial={{ clipPath: "circle(0% at 50% 46%)" }}
+        animate={{ clipPath: "circle(78% at 50% 46%)" }}
+        transition={{ duration: 0.52, ease: [0.7, 0, 0.3, 1] }}
+      />
+      <motion.div
+        className="relative flex flex-col items-center"
+        initial={{ scale: 0.6, opacity: 0, y: 24 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ delay: 0.18, type: "spring", stiffness: 260, damping: 18 }}
+      >
+        <div className="flex items-center gap-3 rounded-3xl border-[4px] border-white/90 bg-white/25 px-7 py-4 backdrop-blur-sm">
+          <motion.div
+            className="flex h-[72px] w-[58px] items-center justify-center"
+            style={{
+              borderRadius: "50% 50% 50% 50% / 60% 60% 42% 42%",
+              background: "radial-gradient(circle at 34% 26%, #fffbe8 8%, #ffd75e 70%)",
+              border: "3px solid #e8a80c",
+            }}
+            animate={{ rotate: [-7, 7, -7] }}
+            transition={{ duration: 0.7, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <Sticker id="lion" size={44} />
+          </motion.div>
+          <div className="text-left">
+            <div className="font-display text-sm font-bold uppercase tracking-widest text-white/90">Think Leo presents</div>
+            <div className="font-display text-4xl font-bold text-white text-outline-sm">LEO EGGS</div>
           </div>
         </div>
       </motion.div>

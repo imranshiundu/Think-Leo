@@ -283,7 +283,11 @@ export type QuestEvent =
   // LEO POP (the arcade) — merge quests share the same board (§14.5)
   | "merges" // creatures merged in Leo Pop today
   | "mergeNew" // NEW creatures discovered in Leo Pop today
-  | "mergeLeo"; // LEOs created in Leo Pop today
+  | "mergeLeo" // LEOs created in Leo Pop today
+  // LEO EGGS (the surprise-egg arcade, §15) — same ONE board
+  | "eggs" // eggs cracked today (any egg, any result)
+  | "eggNew" // NEW friends hatched today
+  | "eggRare"; // rare-or-better hatches today
 
 export interface QuestDef {
   id: string;
@@ -291,7 +295,7 @@ export interface QuestDef {
   event: QuestEvent;
   target: number;
   rewardXp: number;
-  icon: "zap" | "brain" | "map" | "star" | "rocket" | "flame";
+  icon: "zap" | "brain" | "map" | "star" | "rocket" | "flame" | "egg";
 }
 
 export const QUEST_POOL: QuestDef[] = [
@@ -307,6 +311,10 @@ export const QUEST_POOL: QuestDef[] = [
   { id: "merge25", label: "Merge 25 friends in Leo Pop", event: "merges", target: 25, rewardXp: 25, icon: "star" },
   { id: "mergeDisco", label: "Discover a NEW creature in Leo Pop", event: "mergeNew", target: 1, rewardXp: 20, icon: "map" },
   { id: "mergeLeoToday", label: "Create a LEO in Leo Pop", event: "mergeLeo", target: 1, rewardXp: 30, icon: "rocket" },
+  // LEO EGGS — the egg game shares the ONE daily board (§15)
+  { id: "eggs5", label: "Crack 5 surprise eggs", event: "eggs", target: 5, rewardXp: 20, icon: "egg" },
+  { id: "eggNewToday", label: "Hatch a brand-new friend", event: "eggNew", target: 1, rewardXp: 20, icon: "egg" },
+  { id: "eggRare2", label: "Hatch 2 rare-or-better friends", event: "eggRare", target: 2, rewardXp: 30, icon: "egg" },
 ];
 
 /**
@@ -379,6 +387,12 @@ export const ACH_DEFINITIONS: Record<string, AchDef> = {
   mergeChain5: { id: "mergeChain5", name: "Chain Wizard", desc: "Hit a ×5 chain in Leo Pop", icon: "zap", xp: 60 },
   zooAll: { id: "zooAll", name: "Zoo Keeper", desc: "Discover all 10 Leo Pop creatures", icon: "gem", xp: 150 },
   mergeScore: { id: "mergeScore", name: "Pop Star", desc: "Score 1500 in one Leo Pop run", icon: "trophy", xp: 80 },
+  // Leo Eggs (the surprise-egg arcade)
+  eggFirst: { id: "eggFirst", name: "First Crack", desc: "Crack your first surprise egg", icon: "star", xp: 40 },
+  eggExplorer: { id: "eggExplorer", name: "Egg Explorer", desc: "Discover 6 nest friends", icon: "map", xp: 60 },
+  eggLegend: { id: "eggLegend", name: "Golden Luck", desc: "Hatch a LEGENDARY friend", icon: "gem", xp: 120 },
+  eggMaster: { id: "eggMaster", name: "Nest Master", desc: "Discover all 13 nest friends", icon: "trophy", xp: 200 },
+  eggEvolve: { id: "eggEvolve", name: "Grow Up", desc: "Grow a friend to Stage 2", icon: "crown", xp: 60 },
 };
 
 /* ── Leo's encouragement — picked by mood across the app ──────── */

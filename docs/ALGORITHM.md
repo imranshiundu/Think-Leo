@@ -558,3 +558,101 @@ heart math) still passes unchanged.
 7. Rubens Cantuni — *Typography in digital products for kids* — medium.com/ux-of-edtech
 8. Joanna Varro — *The Easiest Fonts for Kids to Read* — varrojoanna.com
 9. Baloo 2 specimen (type selection) — fonts.google.com/specimen/Baloo+2
+
+---
+
+## 14. LEO POP — the merge arcade (v5)
+
+The first pure-fun game, zero maths. A Suika-style physics jar
+(`matter-js`) with the Think Leo cast: drop a creature, two of a kind
+fuse into the next, the chain ends with LEO, and two LEOs detonate into
+the Golden Leo jackpot. Design brain: `src/lib/arcade.ts`.
+
+### 14.1 The psychology
+
+| Hook | Mechanic |
+| --- | --- |
+| Completion drive | You saw tier N+1 once — now you NEED to build it (Suika's core loop) |
+| Variable ratio | Golden eggs: 12% per drop after the 4th, pity-guaranteed within 9 eggless drops — every egg pays *something*, the table only varies the SIZE of the surprise |
+| Dopamine ladder | Chain cascades multiply score while the screen still moves (1.15 s window); the merge sound pitch climbs with every chain step |
+| Collection | The Zoo Book (10 creatures) shows undiscovered silhouettes — completion compulsion |
+| Comeback | The first egg of each local day is guaranteed (`mergeEggDay`) |
+
+### 14.2 The numbers
+
+- Drop weights (tiers 0–4): 30/26/20/14/10 — small creatures only fall from the sky.
+- Merge score by created tier: `[0,1,3,6,10,15,21,28,36,45,100]`, chain multiplier `min(4, 1 + 0.5·(chain−1))`.
+- Golden egg outcomes: gift 34% (random tier 4–7) · party 24% (+60) · twins 22% · popcorn 20% (a whole tier pops).
+- Overflow line: a creature riding the line 2.2 s ends the run.
+- XP: `6 + min(24, floor(score/70)) + 4·newDiscoveries` — flows through the ONE economy.
+
+### 14.3 The ONE-economy contract (§14.5)
+
+`trackMerge` / `recordMergeRun` / `claimMergeEgg` / `seeCreature` are pure
+pipelines: quest bumps (`merges`, `mergeNew`, `mergeLeo`) and achievement
+XP all pass through `addXpPure` + `bumpQuests`, so the daily ring, the
+league and the streak can never disagree with the arcade. The quest board
+is exactly 3 rows with DISTINCT event types — `questsForDay` guarantees it.
+
+---
+
+## 15. LEO EGGS — the surprise-egg arcade (v6)
+
+The flagship pure-fun game #2, built on blind-box psychology — the same
+hooks that keep a feed scroll going, tuned for small hands. You pick an
+egg, PRESS AND HOLD it (one thumb, zero skill), the three.js egg shakes,
+fissures spread, gold light teases — then it bursts and a friend joins
+the collection. Design brain: `src/lib/eggs.ts`; renderer
+`components/eggs/Egg3D.tsx` (three.js) + `EggGame.tsx` (GSAP timeline).
+
+### 15.1 The psychology (researched)
+
+| Hook (Hooked model) | Mechanic in LEO EGGS |
+| --- | --- |
+| Trigger | The Home card glows "Nest egg ready!"; the Royal Egg is free every morning; quest rows pull egg events |
+| Action | Pick an egg → hold-to-crack. No fail state, no skill gate — releasing early just pauses |
+| Variable reward | Rarity table (slot-machine schedule), near-miss gold tease, 1.4 s silhouette suspense, rarity-scaled fanfare + screen shake + haptics. Never a "miss": duplicates pay stars |
+| Investment | Album completion (silhouettes nag), Stage-2 growth (feed 2 extra copies), the nest keeps incubating after the app closes, streak days make eggs luckier |
+
+Key researched principles baked in:
+
+- **Blind-box reveal** — "maybe this is the rare one" is the engine; dopamine
+  peaks BEFORE the reveal, so the crack is a slow, touchable ritual and the
+  next egg is always one tap away (the infinite-feed affordance).
+- **Variable-ratio table** — Spark (free): 68/22/7.5/2/0.5 %, Rainbow (25★):
+  20/48/22/8/2 %, Royal (60★): 0/40/40/16/4 % (common/rare/epic/legend/mythic).
+- **Near-miss tease** — P(gold glow) per rarity: 15/45/80/100/100 %. Honest
+  but noisy: informative enough to chase, never a promise.
+- **Pity** — after 7 dry Spark eggs the 8th is forced rare-or-better, and the
+  countdown is VISIBLE (the pity meter). Losing streaks end; hope never does.
+- **Streak luck** — `+2.5%/streak-day` rare-or-better luck, capped at +12.5 %:
+  the lion app and the egg game now pull the same direction.
+
+### 15.2 The economy
+
+- 13 friends across 5 rarities (5 common, 4 rare, 2 epic, 1 legendary cub,
+  1 mythic star). All art from the sticker library — zero new assets.
+- Duplicates pay stars: 2/5/12/30/60 by rarity; a first discovery pays +5★
+  and +XP. Rarity XP (2/3/5/10/20) flows through the ONE economy.
+- Stars buy Rainbow (25★) / Royal (60★) eggs — the duplicate sink.
+- Growth: 3 hatches of one species → feed 2 extra → Stage 2 (golden frame,
+  +10 XP, pure pride).
+- Nest: a free Spark egg incubates in real time (`NEST_HATCH_MS` = 15 min,
+  `eggNestAt`); when it hatches the next one starts immediately — the app
+  is always growing something while it is closed.
+- Spark rest: 4 s between free eggs (≈ one reveal read) so the crack →
+  reveal → NEXT loop never stalls at its dopamine peak.
+- Quest events `eggs` / `eggNew` / `eggRare` joined the SAME daily board
+  (§14.3 contract still holds: 3 rows, distinct events).
+- Achievements: First Crack · Egg Explorer (6) · Golden Luck (legendary) ·
+  Nest Master (all 13) · Grow Up (first Stage 2).
+
+### 15.3 The three.js egg
+
+`Egg3D` renders one canvas: a speckled candy egg (generated canvas
+textures, no downloads), hemisphere + key + rim lights, drag-to-spin with
+inertia, hold-shake driven by crack progress, an alpha crack overlay that
+eases in, an additive gold glow sprite (the tease), and a burst — two
+shell halves with gravity + 90 round glow sparks (radial-gradient sprite
+particles, never squares). DPR capped at 2, everything disposed on
+unmount; props reach the loop through refs so a hold never re-renders.

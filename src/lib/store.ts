@@ -26,11 +26,20 @@
  *    streaks, the daily ring and the quest board all stay in sync;
  *  · the Zoo Book (mergeDiscoveries) is a collection, not a currency;
  *  · the daily egg (mergeEggDay) is the comeback hook for the arcade.
+ *
+ * V6 — LEO EGGS (the surprise-egg arcade) joins the same ONE economy:
+ *  · every hatch pays rarity XP through the same pipe (daily ring,
+ *    league, streak, quests) and duplicate stars into its own purse;
+ *  · the egg bag is a collection with memory (count + evolved stage);
+ *  · the nest (eggNestAt) is the real-time comeback engine — it keeps
+ *    incubating while the app is closed;
+ *  · the pity counter (eggPity) guarantees rare-or-better every 8
+ *    free Spark eggs — losing streaks always end.
  */
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   ACH_DEFINITIONS,
   BOOST_XP,
@@ -48,6 +57,20 @@ import {
   type AchDef,
 } from "./game";
 import { LEO_TIER, ZOO_TARGET } from "./arcade";
+import {
+  COLLECTION_TARGET,
+  CRITTERS,
+  CRITTERS_BY_UID,
+  EGG_DISCOVERY_STARS,
+  GROW_COPIES,
+  GROW_SPEND,
+  GROW_XP,
+  RARITY_META,
+  isRarePlus,
+  nestState,
+  type EggPlan,
+  type NestState,
+} from "./eggs";
 
 export interface LeoSave {
   xp: number;
@@ -86,6 +109,13 @@ export interface LeoSave {
   mergeEggDay: string; // day the guaranteed daily egg was dropped
   mergePlays: number; // Leo Pop runs finished
   totalMerges: number; // lifetime fusions
+  /* LEO EGGS — the surprise-egg arcade (v6) */
+  eggStars: number; // the egg purse (duplicates pay in)
+  eggBag: Record<string, { count: number; evolved: boolean }>; // uid -> collection entry
+  eggHatched: number; // lifetime cracks
+  eggPity: number; // dry Spark eggs since the last rare-or-better
+  eggNestAt: number; // ms epoch the free nest egg started incubating (0 = ready)
+  eggRoyalDay: string; // day the free daily Royal Egg was claimed
   _hydrated: boolean;
 }
 
@@ -118,6 +148,17 @@ export interface LeoActions {
   /** Leo Pop: a creature SEEN for the first time (dropped/hatched — not
    *  fused). Registers the Zoo Book + the discovery quest, no merge count. */
   seeCreature: (tier: number) => boolean;
+  /** Leo Eggs: one crack resolved — bag, star payout, rarity XP, pity,
+   *  quests and achievements in ONE pipeline. `nest` restarts the
+   *  real-time incubation when the free nest egg was the one cracked. */
+  trackEgg: (plan: EggPlan, opts: { nest?: boolean }) => { gainedStars: number; xp: number };
+  /** Leo Eggs: claim today's free Royal Egg (the morning trigger). */
+  claimRoyalEgg: () => boolean;
+  /** Leo Eggs: pay stars for a Rainbow/Royal egg. False when too poor. */
+  spendEggStars: (n: number) => boolean;
+  /** Leo Eggs: feed GROW_SPEND duplicate copies to grow a friend to
+   *  Stage 2 (pride only — same art, golden frame). */
+  evolveCritter: (uid: string) => boolean;
   pendingAch: AchDef[];
   dismissAch: () => void;
   levelUpPulse: number; // increments on every new player level (UI trigger)
@@ -163,10 +204,21 @@ const DEFAULT_SAVE: LeoSave = {
   mergeEggDay: "",
   mergePlays: 0,
   totalMerges: 0,
+  eggStars: 10, // a starter purse — almost a Rainbow Egg for the curious
+  eggBag: {},
+  eggHatched: 0,
+  eggPity: 0,
+  eggNestAt: 0, // first visit: the nest is already warm
+  eggRoyalDay: "",
   _hydrated: false,
 };
 
 /* ══════════════════ pure state helpers (no get(), ever) ══════════ */
+
+/** Distinct egg friends discovered (bag keys that are real critters). */
+function eggDistinct(s: LeoSave): number {
+  return Object.keys(s.eggBag).filter((k) => CRITTERS_BY_UID[k]).length;
+}
 
 /** A fresh, empty quest board for today. */
 function freshBoard(today: string): Pick<LeoSave, "questDay" | "questProgress" | "questClaimed"> {
@@ -290,6 +342,12 @@ function checkAchievements(snapshot: LeoSave): { save: LeoSave; unlocked: AchDef
     // Leo Pop
     mergeLeo: (s.mergeDiscoveries[LEO_TIER] ?? 0) >= 1,
     zooAll: Object.keys(s.mergeDiscoveries).filter((k) => Number(k) < ZOO_TARGET).length >= ZOO_TARGET,
+    // Leo Eggs
+    eggFirst: s.eggHatched >= 1,
+    eggExplorer: eggDistinct(s) >= 6,
+    eggMaster: eggDistinct(s) >= COLLECTION_TARGET,
+    eggLegend: CRITTERS.some((c) => (c.rarity === "legend" || c.rarity === "mythic") && (s.eggBag[c.uid]?.count ?? 0) >= 1),
+    eggEvolve: Object.values(s.eggBag).some((c) => c.evolved),
   };
 
   const unlocked: AchDef[] = [];
@@ -589,6 +647,84 @@ export const useLeo = create<LeoStore>()(
         return true;
       },
 
+      /* ── Leo Eggs (the surprise-egg arcade) ──────────────────── */
+
+      /**
+       * One crack resolved. Everything an egg touches happens HERE, in
+       * one pure pipeline built from a single snapshot: the bag, the
+       * star purse, the pity counter, the nest restart, the rarity XP
+       * (through the same addXp pipe as every other grant) and the
+       * egg quests. Achievements are checked once, at the end.
+       */
+      trackEgg: (plan, opts) => {
+        const s0 = ensureQuestDay(get());
+        const uid = plan.critter.uid;
+        const cur = s0.eggBag[uid];
+        const bag: LeoSave["eggBag"] = {
+          ...s0.eggBag,
+          [uid]: { count: (cur?.count ?? 0) + 1, evolved: cur?.evolved ?? false },
+        };
+        const gainedStars = plan.dupeStars + (plan.isNew ? EGG_DISCOVERY_STARS : 0);
+        const xp = RARITY_META[plan.rarity].xp;
+
+        let s: LeoSave = {
+          ...s0,
+          eggBag: bag,
+          eggStars: s0.eggStars + gainedStars,
+          eggHatched: s0.eggHatched + 1,
+          // pity guards only the free Spark egg — paid eggs are their own guarantee
+          eggPity: plan.kind === "spark" ? (plan.pityReset ? 0 : s0.eggPity + 1) : s0.eggPity,
+          // the nest immediately starts incubating the next free egg
+          eggNestAt: opts.nest ? Date.now() : s0.eggNestAt,
+        };
+        s = bumpQuests(s, "eggs", 1);
+        if (plan.isNew) s = bumpQuests(s, "eggNew", 1);
+        if (isRarePlus(plan.rarity)) s = bumpQuests(s, "eggRare", 1);
+        const { save: xped } = addXpPure(s, xp);
+        s = bumpQuests(xped, "xp", xp);
+        set(s);
+
+        const { save, unlocked } = checkAchievements(get());
+        if (unlocked.length) {
+          set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
+        }
+        return { gainedStars, xp };
+      },
+
+      claimRoyalEgg: () => {
+        const s = get();
+        const today = dayKey();
+        if (s.eggRoyalDay === today) return false;
+        set({ ...s, eggRoyalDay: today });
+        return true;
+      },
+
+      spendEggStars: (n) => {
+        const s = get();
+        if (s.eggStars < n) return false;
+        set({ eggStars: s.eggStars - n });
+        return true;
+      },
+
+      evolveCritter: (uid) => {
+        const s0 = ensureQuestDay(get());
+        const cur = s0.eggBag[uid];
+        if (!cur || cur.evolved || cur.count < GROW_COPIES) return false;
+        set({
+          ...s0,
+          eggBag: {
+            ...s0.eggBag,
+            [uid]: { count: cur.count - GROW_SPEND, evolved: true },
+          },
+        });
+        get().addXp(GROW_XP); // quest + league + achievements in one pipe
+        const { save, unlocked } = checkAchievements(get());
+        if (unlocked.length) {
+          set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
+        }
+        return true;
+      },
+
       pendingAch: [],
       dismissAch: () => set({ pendingAch: get().pendingAch.slice(1) }),
       levelUpPulse: 0,
@@ -600,7 +736,7 @@ export const useLeo = create<LeoStore>()(
     }),
     {
       name: "think-leo-save-v1",
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => {
         const { _hydrated, pendingAch, levelUpPulse, ...rest } = s;
@@ -644,6 +780,13 @@ export const useLeo = create<LeoStore>()(
           mergeEggDay: p.mergeEggDay ?? "",
           mergePlays: p.mergePlays ?? 0,
           totalMerges: p.totalMerges ?? 0,
+          // v6: the egg fields (a warm nest + a starter purse for everyone)
+          eggStars: p.eggStars ?? 10,
+          eggBag: p.eggBag ?? {},
+          eggHatched: p.eggHatched ?? 0,
+          eggPity: p.eggPity ?? 0,
+          eggNestAt: p.eggNestAt ?? 0,
+          eggRoyalDay: p.eggRoyalDay ?? "",
         };
       },
       /**
@@ -725,6 +868,31 @@ export function useZooProgress(): { found: number; target: number; golden: boole
   const disc = useLeo((s) => s.mergeDiscoveries);
   const found = Object.keys(disc).filter((k) => Number(k) < ZOO_TARGET).length;
   return { found, target: ZOO_TARGET, golden: (disc[10] ?? 0) > 0 };
+}
+
+/**
+ * The nest, live: a 1s ticker that only runs while the app is open.
+ * `ready` means a free egg is waiting in the nest right now — the Home
+ * card and the egg game both read this one truth.
+ */
+export function useEggNest(): NestState & { hydrated: boolean } {
+  const eggNestAt = useLeo((s) => s.eggNestAt);
+  const hydrated = useLeo((s) => s._hydrated);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!hydrated) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [hydrated]);
+  if (!hydrated) return { ready: false, pct: 0, minsLeft: 0, hydrated: false };
+  return { ...nestState(eggNestAt, now), hydrated: true };
+}
+
+/** Egg album progress: distinct friends discovered + the bag itself. */
+export function useEggCollection() {
+  const eggBag = useLeo((s) => s.eggBag);
+  const found = Object.keys(eggBag).filter((k) => CRITTERS_BY_UID[k]).length;
+  return { found, target: COLLECTION_TARGET, bag: eggBag };
 }
 
 /** Is a welcome-back gift waiting? (2+ days away, one per comeback) */
