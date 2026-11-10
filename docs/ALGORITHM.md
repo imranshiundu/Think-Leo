@@ -8,6 +8,10 @@
 > factory) · `src/lib/sound.ts` (audio engine) · `src/lib/store.ts` (save
 > state) · `src/lib/device.ts` (device detection) · `src/components/leo/Leo.tsx`
 > (mascot) · `src/components/game/*` (screens).
+>
+> **Sibling books:** every icon → [`ICONS.md`](ICONS.md) · every animation →
+> [`ANIMATIONS.md`](ANIMATIONS.md) · the whole journey → [`END-TO-END.md`](END-TO-END.md) ·
+> the kid test → [`KID-TEST.md`](KID-TEST.md)
 
 ---
 
@@ -39,8 +43,8 @@ to stacking all 8 core drives; three matter most to us:
 
 1. **Scarcity (lives).** The 5-life limit with ~30-minute cooldowns creates a
    natural stop-and-come-back rhythm — Psychology of Games calls it the reason
-   players *don't* burn out. → Think Leo: **5 hearts, +1 every 15 min**
-   (kinder for kids), plus refill tickets from world chests (§6.2).
+   players *don't* burn out. → Think Leo: **5 hearts, +1 every 8 min**
+   (kids wait badly — `HEART_REGEN_MS`), plus refill tickets from world chests (§6.2).
 2. **The level map.** A winding trail of star-rated, locked nodes makes
    progress *visible and ownable* (Core Drive 2: Development &
    Accomplishment). → `LevelMap.tsx`: sine-wave trail, 3-star nodes, locks,
@@ -49,6 +53,13 @@ to stacking all 8 core drives; three matter most to us:
    into a free, escalating fireworks bonus. → **LEO RUSH**: after the 8th
    puzzle, 12 seconds of ×2 points where hearts can't be lost — pure
    adrenaline with zero punishment (§5.4).
+
+### 1.2.1 The kind economy, in constants
+
+All tuning constants live in `src/lib/game.ts` and are quoted in this book;
+the headline ones: `MAX_HEARTS = 5` with `HEART_REGEN_MS = 8 min`,
+`ROUND_COUNT = 8`, `RUSH_SECONDS = 12`, `DAILY_GOAL_XP = 120`,
+`WORLD_GATE_DONE = 3` (finished levels that open the next world).
 
 ### 1.3 Typography (researched, not guessed)
 

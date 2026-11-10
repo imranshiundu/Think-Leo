@@ -5,7 +5,7 @@ loops that make Duolingo and Candy Crush sticky — streaks, XP, hearts, stars,
 a winding level map, combo multipliers and a rich sound family — wrapped in a
 kid-safe, phone-first experience that also runs great on laptops and tablets.
 
-> **The full design & math is documented in [`docs/ALGORITHM.md`](docs/ALGORITHM.md).**
+> **The bookshelf:** design & math in [`docs/ALGORITHM.md`](docs/ALGORITHM.md) · every icon in [`docs/ICONS.md`](docs/ICONS.md) · every animation in [`docs/ANIMATIONS.md`](docs/ANIMATIONS.md) · the whole journey in [`docs/END-TO-END.md`](docs/END-TO-END.md) · the kid test in [`docs/KID-TEST.md`](docs/KID-TEST.md)
 
 ## What's inside
 
@@ -23,6 +23,7 @@ kid-safe, phone-first experience that also runs great on laptops and tablets.
 | **LEO POP** | The merge arcade: drop friends in a physics jar, fuse two of a kind, chase the Golden Leo, collect the 10-creature Zoo Book — no maths, just popping |
 | **LEO EGGS** | The surprise-egg arcade: pick an egg, press and HOLD, watch the three.js egg shake, crack and burst — 13 collectible friends across 5 rarities, a golden near-miss tease, a visible pity meter, a real-time nest that keeps incubating after the app closes, streak-powered luck and a friends album + room |
 | **Retention loops** | Daily goal ring, streak flame with freezes, weekly leagues, XP levels, quests (levels + arcade + eggs share ONE board), badges, comeback gifts |
+| **Parent HQ (v8)** | The grown-up side of the door: press-and-hold for 2.5 s to enter — today's play minutes, per-skill mastery bars from the Flow Ranger data, the daily play window (15/30/60 min or open) with a gentle nap screen when it runs out, +15 min extensions, and a hold-gated reset |
 | **Sound** | A synthesized SFX studio (correct/wrong voices, combo climbs, egg cracks, bursts, roars) + three licensed Kevin MacLeod tracks that crossfade and duck like a real DJ |
 | **A 3D touch** | The Space Hop world floats in a lazy-loaded three.js sky; the LEO EGGS egg is a fully interactive three.js object — drag it, hold it, crack it |
 | **Made for phones** | Installable from the browser ("Add to Home Screen"), full-screen, safe-area aware, fully offline — no jargon anywhere for parents |
@@ -46,6 +47,7 @@ bun scripts/sim-v4.ts    # logic regression: unlocks, question factory, practice
 bun scripts/sim-feed.ts  # feed regression: rarity table, pity, MEGA, affinity, streak luck
 bun scripts/sim-store.ts # save-state regression: levels always end, streaks always record, feed economy
 bun scripts/make-icons.mjs   # regenerate the app icons from Leo's face
+bun scripts/docs-mood-gallery.tsx # regenerate the mood gallery in docs/assets/
 ```
 
 Open the app on a **phone** (or anything with a browser), tap **PLAY**, keep
