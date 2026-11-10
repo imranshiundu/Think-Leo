@@ -402,6 +402,18 @@ class LeoSound {
     this.horn(NOTE(-3, 233.08), t + 0.13, 0.26, 0.07);
   }
 
+  /** Time's up: the clock's own voice — two woodblock knocks winding DOWN,
+   * then a little rising "try again!" chirp. Distinct from wrong()'s horn:
+   * a timeout is nobody's fault, so it gets its own friendly cue. */
+  timeUp() {
+    if (!this.guard()) return;
+    const t = this.t0;
+    this.tone(NOTE(0, 392), { at: t, dur: 0.12, type: "square", vol: 0.05 });
+    this.tone(NOTE(-3, 392), { at: t + 0.16, dur: 0.2, type: "square", vol: 0.05 });
+    this.marimba(NOTE(4, 523.25), t + 0.5, 0.14, 0);
+    this.marimba(NOTE(7, 659.25), t + 0.62, 0.18, 0.15);
+  }
+
   /**
    * Combo escalation family — ONE motif (major-third leap), FOUR levels,
    * root climbing a semitone per streak step (Duolingo principle, §8.3).

@@ -140,6 +140,7 @@ export function Play({
   /* floating "+120" score pops and combo banners (the candy layer) */
   const [pops, setPops] = useState<{ id: number; pts: number }[]>([]);
   const [banner, setBanner] = useState<{ id: number; text: string } | null>(null);
+  const [timeUp, setTimeUp] = useState(false); // the big visible "time's up!" beat
 
   /* rush state */
   const [rushQs, setRushQs] = useState<Question[]>([]);
@@ -305,8 +306,10 @@ export function Play({
           return nw;
         });
         setRightStreak(0);
-        sfx.wrong();
+        if (idx === null) sfx.timeUp(); // the clock's own voice — distinct from a wrong answer
+        else sfx.wrong();
         if (!practice && !gentleTimeout) window.setTimeout(() => sfx.heartLost(), 240);
+        if (idx === null) setTimeUp(true); // a bubble a pre-reader can't READ is not a moment (docs/KID-TEST.md #6)
         setShakeKey((k) => k + 1);
         setLeoMood("sad");
         setBubble(
@@ -334,6 +337,7 @@ export function Play({
   const [timeLeft, setTimeLeft] = useState(10);
   useEffect(() => {
     if (phase !== "play" || !q) return;
+    setTimeUp(false); // fresh round: clear the previous "time's up!" stamp
     const total = q.time;
     setTimeLeft(total);
     timeLeftRef.current = total;
@@ -538,6 +542,26 @@ export function Play({
           >
             <div className="rounded-r-2xl border-[3px] border-white bg-gradient-to-r from-leo-sun via-leo-berry to-leo-grape px-6 py-2 shadow-[0_6px_0_rgba(0,0,0,0.15)]">
               <span className="font-display text-2xl font-bold text-white text-outline-sm">{banner.text}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* TIME'S UP! — a stamp a pre-reader FEELS: big, wobbly, unmissable */}
+      <AnimatePresence>
+        {timeUp && (
+          <motion.div
+            key="timeup"
+            initial={{ scale: 2.2, opacity: 0, rotate: 10 }}
+            animate={{ scale: 1, opacity: 1, rotate: -6 }}
+            exit={{ scale: 0.7, opacity: 0, rotate: -12 }}
+            transition={{ type: "spring", stiffness: 320, damping: 15 }}
+            className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center"
+          >
+            <div className="rounded-3xl border-[5px] border-leo-berry bg-white/95 px-8 py-4 shadow-[0_10px_0_rgba(0,0,0,0.12)]">
+              <span className="font-display text-4xl font-black tracking-wide text-leo-berry">
+                TIME&apos;S UP!
+              </span>
             </div>
           </motion.div>
         )}
@@ -1226,13 +1250,11 @@ function QuestionStage({
                     <span className="font-display text-lg font-bold text-leo-ink">{opt}</span>
                   </span>
                 ) : isArt ? (
-                  q.kind === "shadow" ? (
-                    <span style={{ filter: "brightness(0) opacity(0.85)" }}>
-                      <Sticker id={opt as StickerId} size={52} />
-                    </span>
-                  ) : (
-                    <Sticker id={opt as StickerId} size={52} />
-                  )
+                  /* kid-tested: answers must be COLOURED animals — matching a black
+                     shadow to MORE black shadows is abstract shape algebra for a
+                     pre-reader (docs/KID-TEST.md #5). The question keeps its
+                     silhouette; the answers show the real animal. */
+                  <Sticker id={opt as StickerId} size={q.kind === "shadow" ? 60 : 52} />
                 ) : (
                   opt
                 )}

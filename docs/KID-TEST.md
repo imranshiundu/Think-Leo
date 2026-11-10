@@ -51,3 +51,28 @@ build we pushed compiles clean — the deployment just never picked it up.
 still serves `think-leo-v3`, so either the Git integration points at a
 different repo/branch or auto-deploy is off. Every finding in rows 1–4 is
 already fixed on disk — the kid in Nairobi is just not being served it.
+
+## Shipped the same day (2026-11-10, evening)
+
+The normal push triggered Vercel and the live site serves the new build
+(`sw.js` = `think-leo-v6`). Three kid-test findings became code, each verified
+with real clicks on the dev build before shipping:
+
+- **#5 → coloured shadow answers.** The question keeps its black silhouette;
+  the answers now show the real coloured animals (monkey, elephant, parrot),
+  60 px for an easy thumb hit. Screenshot-verified.
+- **#6 → the "TIME'S UP!" beat.** Timeouts now slam a big wobbly stamp into
+  the middle of the screen with their own friendly SFX (`timeUp`: two
+  woodblock knocks down + a rising "try again!" chirp) — the clock gets a
+  voice instead of a silent drift to the next round. DOM + screenshot
+  verified; the stamp lives exactly through the 1.6 s feedback window.
+- **Map camera → the kid's node.** The camera effect only depended on
+  `[scale]`, so with a save that rehydrated after mount it aimed at level 1
+  and never corrected. It now re-aims on `currentLevel`/`save.stars`:
+  seeded levels 1–5 done → the map opens with level 6 mid-screen, Leo beside
+  it, the starred trail below and the locked future above. Verified with a
+  seeded save.
+
+Still open on purpose (design decisions, not bugs): timer ring and paw-print
+progress are small for pre-readers, and points vs XP is two currencies on one
+screen — both queued for the parent-HQ pass.

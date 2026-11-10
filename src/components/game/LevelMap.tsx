@@ -75,7 +75,10 @@ export function LevelMap({
         ? firstLockedInWorld
         : currentLevel;
     el.scrollTo({ top: nodeY(target) * scale - el.clientHeight * 0.55, behavior: "instant" as ScrollBehavior });
-  }, [scale]);
+    /* re-aim when the save rehydrates: with only [scale] as dep the camera aimed
+       at an empty save (level 1) and never corrected once zustand loaded from
+       localStorage — a returning kid saw the wrong quest (docs/KID-TEST.md). */
+  }, [scale, currentLevel, save.stars]);
 
   useEffect(() => {
     if (!toast) return;

@@ -180,8 +180,8 @@ exist because young kids want to **do** things, not only compute:
 | True/Trap | verification | sums ≤ 10 → ±50 with sneaky ±5 lies |
 | Memory | working memory | Simon-style: 3 → 6 pads, each pad has its own note |
 | **Tap it!** (v4) | scanning + reaction | “Tap all the monkeys!” — 9 → 16-tile mixed crowd, 3–6 targets; wrong taps only *boing*, all-found ends the puzzle with a rising scale (`found(n)`) |
-| **Shadow** (v4) | visual discrimination | match the animal to its silhouette; decoys come from the same world + a woodland cast (frog, fox, owl joined the sticker catalog) |
-| **Pattern** (v4) | pre-math logic | colour+shape tokens: AB → AAB/ABB → ABC → AABB pairs; decoys share shape *or* colour, never both |
+| **Shadow** (v4) | visual discrimination | match the silhouette to the **coloured** animal — the question stays a black shadow, the answers show real animals (kid-tested: shadow-to-shadow matching is abstract shape algebra for a pre-reader, docs/KID-TEST.md #5); decoys come from the same world + a woodland cast (frog, fox, owl joined the sticker catalog) |
+| **Sequence** (v7) | pre-math logic | number trains `[a, a+r, a+2r, ?]` — arithmetic → geometric → alternating → Fibonacci; the "?" cell is always LAST and the train is always visible (the old colour/shape "Pattern" kind died in the rewrite — on the stale v3 deployment it rendered every cell as "?" with hex-leak labels, docs/KID-TEST.md #2–3) |
 | **Feed Leo** (v4) | counting you can feel | drop snacks into Leo's bowl one tap at a time (munch SFX), take extras back, tap DONE when the count matches; bowl holds want+4 so overshoots are fixable |
 
 Judge-yourself games (Memory, Tap it!, Feed Leo) return `answer: −1` and
@@ -354,6 +354,7 @@ ticks and sparkle.
 | --- | --- | --- |
 | `correct` | C5–E5–G5 triangle arp, 70 ms steps + air sparkle | the iconic ding family |
 | `wrong` | soft sawtooth A3→F3 fall, low volume | "hmm", never "NO!" |
+| `timeUp` | two square knocks winding down + rising marimba chirp | the clock's own friendly voice — a timeout is nobody's fault, so it never uses the wrong-answer horn (§kid-test #6) |
 | `combo(n)` | see §8.3 | escalation |
 | `heartLost` | two-note minor fall | gentle "oh" |
 | `tick` | 30 ms 1320 Hz square | urgency |
