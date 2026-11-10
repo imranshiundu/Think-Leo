@@ -279,6 +279,7 @@ export function Play({
         });
         setWrongStreak(0);
         store.trackAnswer(true);
+        store.trackSkill(q.kind, true); // Parent HQ: which skills the kid nails
         store.trackCombo(nc);
         sfx.correct();
         if (nc >= 3) window.setTimeout(() => sfx.combo(nc), 140);
@@ -299,6 +300,7 @@ export function Play({
         const gentleTimeout = idx === null && levelIdx <= GENTLE_LEVELS;
         if (!practice && !gentleTimeout) store.loseHeart();
         store.trackAnswer(false);
+        store.trackSkill(q.kind, false); // Parent HQ: which skills need gentler levels
         setCombo(0);
         setWrongStreak((w) => {
           const nw = w + 1;
@@ -982,27 +984,29 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function TimerRing({ left, total }: { left: number; total: number }) {
-  const r = 16;
+  /* kid-tested: a 28 px ring with a 14 px digit is invisible to a pre-reader
+     (docs/KID-TEST.md) — the clock is now a fist-sized dial a thumb can read */
+  const r = 26;
   const c = 2 * Math.PI * r;
   const frac = clamp(left / total, 0, 1);
   const low = left <= 5;
   return (
-    <div className={`relative h-11 w-11 ${low ? "anim-heartbeat" : ""}`}>
-      <svg width="44" height="44" viewBox="0 0 44 44" className="-rotate-90">
-        <circle cx="22" cy="22" r={r} fill="#fff" stroke="#F0E0BD" strokeWidth="5" />
+    <div className={`relative h-16 w-16 shrink-0 ${low ? "anim-heartbeat" : ""}`}>
+      <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90">
+        <circle cx="32" cy="32" r={r} fill="#fff" stroke="#F0E0BD" strokeWidth="7" />
         <circle
-          cx="22"
-          cy="22"
+          cx="32"
+          cy="32"
           r={r}
           fill="none"
           stroke={low ? "#ff5a8c" : "#58cc02"}
-          strokeWidth="5"
+          strokeWidth="7"
           strokeLinecap="round"
           strokeDasharray={c}
           strokeDashoffset={c * (1 - frac)}
         />
       </svg>
-      <span className={`absolute inset-0 flex items-center justify-center font-display text-sm font-bold ${low ? "text-leo-berry-deep" : "text-leo-ink"}`}>
+      <span className={`absolute inset-0 flex items-center justify-center font-display text-2xl font-black ${low ? "text-leo-berry-deep" : "text-leo-ink"}`}>
         {Math.ceil(left)}
       </span>
     </div>

@@ -402,15 +402,17 @@ export function SoundToggles({
 /* ── Question progress: actual paw prints ──────────────────────── */
 
 export function PawProgress({ current, total }: { current: number; total: number }) {
+  /* kid-tested: future paws at opacity-45 vanished on the cream background —
+     bumped size + contrast so a pre-reader can count their own progress */
   return (
-    <div className="flex items-center gap-0.5" aria-label={`Question ${current + 1} of ${total}`}>
+    <div className="flex items-center gap-1" aria-label={`Question ${current + 1} of ${total}`}>
       {Array.from({ length: total }, (_, i) => (
         <svg
           key={i}
-          width={i === current ? 22 : 18}
-          height={16}
+          width={i === current ? 30 : 24}
+          height={22}
           viewBox="0 0 22 16"
-          className={i < current ? "opacity-100" : i === current ? "opacity-100" : "opacity-45"}
+          className={i < current ? "opacity-100" : i === current ? "opacity-100" : "opacity-70"}
         >
           {i < current ? (
             <g fill="#58cc02">

@@ -73,6 +73,9 @@ with real clicks on the dev build before shipping:
   it, the starred trail below and the locked future above. Verified with a
   seeded save.
 
-Still open on purpose (design decisions, not bugs): timer ring and paw-print
-progress are small for pre-readers, and points vs XP is two currencies on one
-screen — both queued for the parent-HQ pass.
+Still open on purpose (design decisions, not bugs): points vs XP is two
+currencies on one screen — queued for a future polish pass. (The other two
+notes from this list — the tiny timer ring and the parent-facing report —
+SHIPPED in v8: the clock is now a 64 px dial, the paw prints are bold, and
+**Parent HQ** adds the play-window nap screen, per-skill mastery bars and a
+hold-gated reset. See docs/ALGORITHM.md §18.)

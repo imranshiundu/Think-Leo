@@ -147,6 +147,10 @@ export interface LeoSave {
   feedBestHeat: number; // best heat ever charged (achievement)
   feedMegaDay: string; // day the free daily MEGA card was claimed
   feedPullDay: string; // last day a card was opened (comeback luck)
+  /* Parent HQ (v8) — grown-up-facing telemetry + the play window */
+  skillStats: Record<string, { ok: number; n: number }>; // question kind -> correct/total
+  playToday: { day: string; ms: number; bonus: number }; // today's playtime + grown-up extensions
+  dailyCapMin: number; // the family play window (minutes; 0 = open ended)
   _hydrated: boolean;
 }
 
@@ -158,6 +162,14 @@ export interface LeoActions {
   /** Any finished run counts the day for streak/playDays — even 0 stars. */
   noteActivity: () => void;
   trackAnswer: (correct: boolean) => void;
+  /** Parent HQ: per-skill mastery — kind is optional so old callers keep working. */
+  trackSkill: (kind: string, correct: boolean) => void;
+  /** Parent HQ: the play window — visible time today, cap, grown-up extensions. */
+  bumpPlayMs: (ms: number) => void;
+  setDailyCap: (min: number) => void;
+  extendPlay: (min: number) => void;
+  /** Minutes of play used today against the window (cap + bonus). */
+  playMinutesToday: () => number;
   trackCombo: (n: number) => void;
   trackRush: (hits: number) => void;
   recordLevel: (levelIdx: number, stars: number, score: number) => void;
@@ -254,6 +266,9 @@ const DEFAULT_SAVE: LeoSave = {
   feedBestHeat: 0,
   feedMegaDay: "",
   feedPullDay: "",
+  skillStats: {},
+  playToday: { day: "", ms: 0, bonus: 0 },
+  dailyCapMin: 30, // the default family window: 30 focused minutes
   _hydrated: false,
 };
 
@@ -502,6 +517,46 @@ export const useLeo = create<LeoStore>()(
             set({ ...save, pendingAch: [...get().pendingAch, ...unlocked] });
           }
         }
+      },
+
+      /** Per-skill mastery for Parent HQ — which puzzles the kid nails vs fumbles. */
+      trackSkill: (kind, correct) => {
+        const s = get().skillStats[kind] ?? { ok: 0, n: 0 };
+        set({
+          skillStats: {
+            ...get().skillStats,
+            [kind]: { ok: s.ok + (correct ? 1 : 0), n: s.n + 1 },
+          },
+        });
+      },
+
+      /** The play-window clock: one heartbeat per visible second (shell ticker). */
+      bumpPlayMs: (ms) => {
+        // NEVER write before the save rehydrates — an early tick would reset
+        // playToday to zero and persist that, wiping the kid's used minutes
+        // on every app start (this exact bug shipped once; never again).
+        if (!get()._hydrated) return;
+        const today = dayKey();
+        const pt = get().playToday;
+        // a new day resets the window — yesterday's minutes are gone
+        const base = pt.day === today ? pt : { day: today, ms: 0, bonus: 0 };
+        set({ playToday: { ...base, ms: Math.min(base.ms + ms, 24 * 60 * 60000) } });
+      },
+
+      setDailyCap: (min) => set({ dailyCapMin: Math.max(0, Math.min(240, min)) }),
+
+      /** Grown-ups can stretch today's window without changing the family rule. */
+      extendPlay: (min) => {
+        const today = dayKey();
+        const pt = get().playToday;
+        const base = pt.day === today ? pt : { day: today, ms: 0, bonus: 0 };
+        set({ playToday: { ...base, bonus: base.bonus + min * 60000 } });
+      },
+
+      playMinutesToday: () => {
+        const pt = get().playToday;
+        if (pt.day !== dayKey()) return 0;
+        return Math.floor(pt.ms / 60000);
       },
 
       trackCombo: (n) => {

@@ -11,6 +11,7 @@ import { Leo } from "@/components/leo/Leo";
 import { ChestArt } from "@/components/leo/badges";
 import { AmbientCartoons } from "@/components/game/ambient";
 import { CssEgg } from "@/components/eggs/EggGame";
+import { HoldButton, ParentHQ } from "@/components/game/ParentHQ";
 import { Sticker } from "@/components/leo/stickers";
 import {
   ChunkyButton,
@@ -37,7 +38,7 @@ import {
 } from "@/lib/game";
 import { useComeback, useEggCollection, useEggNest, useFeedMegaReady, useFeedWall, useLeo, useMergeEggReady, useQuests, useZooProgress } from "@/lib/store";
 import { sfx } from "@/lib/sound";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Brain,
   Crown,
@@ -90,6 +91,7 @@ export function Home({
   const feedGift = useFeedMegaReady();
 
   const [installEvt, setInstallEvt] = useState<InstallPromptEvent | null>(null);
+  const [hqOpen, setHqOpen] = useState(false);
   useEffect(() => {
     const h = (e: Event) => {
       e.preventDefault();
@@ -613,7 +615,7 @@ export function Home({
           <StreakStrip playDays={save.playDays} streak={save.streak} />
         </section>
 
-        {/* ── grown-ups / add to home screen ── */}
+        {/* ── grown-ups: the gated door to Parent HQ ── */}
         <footer className="mt-auto pt-5">
           <div className="leo-card flex flex-wrap items-center justify-between gap-3 p-4">
             <div className="flex items-start gap-2 text-xs leading-relaxed text-leo-ink-soft">
@@ -628,23 +630,35 @@ export function Home({
                 </span>
               </span>
             </div>
-            {installEvt && (
-              <ChunkyButton
-                color="sun"
-                size="sm"
-                onClick={() => {
-                  void installEvt.prompt();
-                  setInstallEvt(null);
-                }}
-                ariaLabel="Add Think Leo to your home screen"
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <Download width={15} height={15} /> Add to Home Screen
-                </span>
-              </ChunkyButton>
-            )}
+            <div className="flex flex-col items-stretch gap-2">
+              {installEvt && (
+                <ChunkyButton
+                  color="sun"
+                  size="sm"
+                  onClick={() => {
+                    void installEvt.prompt();
+                    setInstallEvt(null);
+                  }}
+                  ariaLabel="Add Think Leo to your home screen"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <Download width={15} height={15} /> Add to Home Screen
+                  </span>
+                </ChunkyButton>
+              )}
+              {/* the parent gate: a 4-year-old TAPS — holding is the grown-up's move */}
+              <HoldButton
+                label="Open Parent HQ"
+                hint="press and hold"
+                onDone={() => setHqOpen(true)}
+              />
+            </div>
           </div>
         </footer>
+
+        <AnimatePresence>
+          {hqOpen && <ParentHQ open onClose={() => setHqOpen(false)} />}
+        </AnimatePresence>
       </div>
     </div>
   );

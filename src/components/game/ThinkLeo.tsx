@@ -24,9 +24,10 @@ import { FeedGame } from "@/components/feed/FeedGame";
 import { AchievementToasts } from "@/components/game/bits";
 import { detectDevice, watchDevice, type DeviceKind } from "@/lib/device";
 import { recordDevice } from "@/lib/deviceInfo";
-import { LEVELS_PER_WORLD, WORLDS, worldOf } from "@/lib/game";
+import { LEVELS_PER_WORLD, WORLDS, dayKey, worldOf } from "@/lib/game";
 import { sfx } from "@/lib/sound";
 import { useLeo } from "@/lib/store";
+import { NapScreen } from "@/components/game/ParentHQ";
 import { Sticker } from "@/components/leo/stickers";
 import { Leo } from "@/components/leo/Leo";
 import { AnimatePresence, motion } from "framer-motion";
@@ -85,13 +86,32 @@ export default function ThinkLeo() {
     // "play" is driven by the Play screen itself (play + rush moods)
   }, [soundMusic, view]);
 
-  /* splash plays in full once per session */
+  /* splash plays in full once per session. NOTE: onDone MUST be stable —
+     Splash rebuilds its GSAP timeline whenever [quick, onDone] change, so a
+     fresh closure here would restart the show forever. */
+  const finishSplash = useCallback(() => setSplashDone(true), []);
   const [quickSplash] = useState(
     () => typeof sessionStorage !== "undefined" && sessionStorage.getItem("tl-seen") === "1"
   );
   useEffect(() => {
     if (splashDone) sessionStorage.setItem("tl-seen", "1");
   }, [splashDone]);
+
+  /* Parent HQ — the play-window clock: one heartbeat per 5 VISIBLE seconds
+     (minutes-scale window; 5 s granularity keeps re-renders near zero).
+     Subscribing to the derived BOOLEAN keeps the shell quiet — only the
+     actual nap flip re-renders, never the ticking clock. */
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") useLeo.getState().bumpPlayMs(5000);
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, []);
+  const napping = useLeo((s) => {
+    if (s.dailyCapMin === 0) return false; // open-ended
+    const today = s.playToday.day === dayKey();
+    return today && s.playToday.ms >= s.dailyCapMin * 60000 + s.playToday.bonus;
+  });
 
   /* ── level-transition wipe: every jump into a level is a moment ── */
   const [wipe, setWipe] = useState<number | null>(null);
@@ -163,7 +183,7 @@ export default function ThinkLeo() {
           <Splash
             key="splash"
             quick={quickSplash || !hydrated}
-            onDone={() => setSplashDone(true)}
+            onDone={finishSplash}
           />
         )}
       </AnimatePresence>
@@ -172,6 +192,11 @@ export default function ThinkLeo() {
       <AnimatePresence>{arcadeWipe && <ArcadeWipe key="arcade-wipe" />}</AnimatePresence>
       <AnimatePresence>{eggWipe && <EggWipe key="egg-wipe" />}</AnimatePresence>
       <AnimatePresence>{feedWipe && <FeedWipe key="feed-wipe" />}</AnimatePresence>
+
+      {/* the play window, enforced above every screen */}
+      <AnimatePresence>
+        {napping && <NapScreen onExtend={() => useLeo.getState().extendPlay(15)} />}
+      </AnimatePresence>
 
       <motion.div
         key={view}

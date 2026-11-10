@@ -823,3 +823,41 @@ ONE-economy rule: **a fix that never reaches the device is not a fix.**
 Network-first code (v5) is what makes every future change land on the
 next launch — online. (Offline launches get the last-good build; that
 is the trade the install contract promises.)
+
+## 18. Parent HQ — the grown-up side of the door (v8)
+
+The kid owns the game; the adult who hands over the phone owns the
+boundaries. Parent HQ (gated entrance: **press and hold** the paw ~2.5 s —
+4-year-olds tap, holding is a grown-up motor skill) adds three things:
+
+### 18.1 The play window (the nap)
+
+A visible-time budget, not a screen-time nag:
+
+- The shell ticks `bumpPlayMs(5 000)` every 5 **visible** seconds
+  (`visibilityState === "visible"` — background tabs never count).
+- `dailyCapMin` (family rule, default 30, selectable 15/30/60/open) +
+  `playToday.bonus` (grown-up extensions, today only) = today's window.
+- When the window runs out, the **nap screen** floats above everything:
+  sleeping Leo, "Today's thinking time is used up — Leo saves every star",
+  and a hold-gated *Add 15 more minutes today*. A new day resets it.
+- **The hydration guard** (a bug shipped and caught in the same hour): the
+  first tick fired before zustand rehydrated, reset `playToday`, and
+  persisted the reset — wiping used minutes on every app start. `bumpPlayMs`
+  now refuses to write until `_hydrated`; the ticker also waits for it.
+
+### 18.2 Skills so far (the Flow Ranger, made visible)
+
+Every judged answer feeds `skillStats[kind] = {ok, n}` (11 puzzle kinds).
+Parent HQ renders one bar per skill — green ≥70 %, amber ≥40 %, berry below —
+so a parent sees "counting: strong, tables: wobbly". The SAME numbers are
+what the Flow Ranger already breathes with (§5): Parent HQ doesn't collect
+anything new, it just shows the family what the difficulty engine knows.
+Still local-only: nothing leaves the device.
+
+### 18.3 The pre-reader HUD (kid-test follow-ups)
+
+- `TimerRing`: 44 → 64 px, 5 → 7 px stroke, `text-sm` → `text-2xl` black
+  digit — "a pre-reader can't read 6 in a 28 px ring" (docs/KID-TEST.md).
+- `PawProgress`: 18/22 → 24/30 px paws, future paws opacity 45 → 70 % —
+  the kid can count their own progress across the 8 rounds.
