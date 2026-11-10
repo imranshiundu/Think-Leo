@@ -164,6 +164,30 @@ export function LeoPop({ onExit }: { onExit: () => void }) {
     return () => window.removeEventListener("resize", measure);
   }, []);
 
+  /* physics walls, kept in refs so a mid-run resize / orientation flip can
+     rebuild them — walls were baked once at run start and balls ESCAPED the
+     rotated jar (the manifest allows "any" orientation, so this happens). */
+  const wallsRef = useRef<Matter.Body[]>([]);
+  const buildWalls = useCallback((w: number, h: number) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (wallsRef.current.length) Matter.World.remove(engine.world, wallsRef.current);
+    const wallOpts: Matter.IChamferableBodyDefinition = { isStatic: true, restitution: 0.05, friction: 0.6 };
+    wallsRef.current = [
+      Matter.Bodies.rectangle(w / 2, h + 40, w * 2, 80, wallOpts), // floor
+      Matter.Bodies.rectangle(-32, h / 2, 80, h * 3, wallOpts), // left lip
+      Matter.Bodies.rectangle(w + 32, h / 2, 80, h * 3, wallOpts), // right lip
+    ];
+    Matter.World.add(engine.world, wallsRef.current);
+  }, []);
+
+  /* rebuild the walls whenever the jar is re-measured mid-run */
+  useEffect(() => {
+    if (engineRef.current && phase === "playing") {
+      buildWalls(jarW, jarRef.current?.clientHeight ?? JAR_FALLBACK.h);
+    }
+  }, [jarW, phase, buildWalls]);
+
   const save = useLeo();
   // destructured once: zustand actions are stable, and the React Compiler
   // wants plain identifiers (not save.x) in memoization deps
@@ -512,6 +536,7 @@ export function LeoPop({ onExit }: { onExit: () => void }) {
       Matter.Engine.clear(engineRef.current);
       engineRef.current = null;
     }
+    wallsRef.current = [];
     ballsRef.current.forEach((b) => b.el.remove());
     ballsRef.current.clear();
     pendingMergesRef.current = [];
@@ -557,12 +582,7 @@ export function LeoPop({ onExit }: { onExit: () => void }) {
     engineRef.current = engine;
     overRef.current = false;
 
-    const wallOpts: Matter.IChamferableBodyDefinition = { isStatic: true, restitution: 0.05, friction: 0.6 };
-    Matter.World.add(engine.world, [
-      Matter.Bodies.rectangle(jarW / 2, jarH + 40, jarW * 2, 80, wallOpts), // floor
-      Matter.Bodies.rectangle(-36 + 4, jarH / 2, 80, jarH * 3, wallOpts), // left lip at x=4
-      Matter.Bodies.rectangle(jarW + 32, jarH / 2, 80, jarH * 3, wallOpts), // right lip
-    ]);
+    buildWalls(jarW, jarH);
 
     Matter.Events.on(engine, "collisionStart", (evt) => {
       for (const pair of evt.pairs) {
@@ -666,7 +686,7 @@ export function LeoPop({ onExit }: { onExit: () => void }) {
     };
     loopRef.current = loop;
     rafRef.current = requestAnimationFrame(loop);
-  }, [cleanupWorld, doFuse, resolveEgg, later, endRun, rollNext, eggReady]);
+  }, [cleanupWorld, doFuse, resolveEgg, later, endRun, rollNext, eggReady, buildWalls]);
 
   /* ── lifecycle ────────────────────────────────────────────────── */
 
@@ -757,7 +777,7 @@ export function LeoPop({ onExit }: { onExit: () => void }) {
             cleanupWorld();
             onExit();
           }}
-          className="pill cursor-pointer px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
+          className="pill min-h-[44px] cursor-pointer px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
         >
           <Home width={14} height={14} className="mr-1 inline" /> Home
         </button>
@@ -777,7 +797,7 @@ export function LeoPop({ onExit }: { onExit: () => void }) {
               setZooOpen(true);
             }}
             aria-label="Open the Zoo Book"
-            className="pill cursor-pointer px-2.5 py-1.5 hover:bg-leo-cream"
+            className="pill min-h-[44px] cursor-pointer px-2.5 hover:bg-leo-cream"
           >
             <Sticker id="lion" size={16} />
             <span className="text-xs font-bold text-leo-ink">Zoo</span>
@@ -795,7 +815,7 @@ export function LeoPop({ onExit }: { onExit: () => void }) {
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-end pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-16">
         <div
           ref={jarRef}
-          className={`relative min-h-[330px] max-h-[58vh] w-[min(92vw,400px)] flex-1 rounded-t-[26px] rounded-b-[34px] border-[6px] border-b-[9px] border-white/75 bg-white/35 shadow-[inset_0_10px_30px_rgba(74,47,27,0.10),0_18px_40px_-18px_rgba(140,100,40,0.45)] backdrop-blur-[2px] ${
+          className={`relative h-[clamp(250px,52dvh,440px)] w-[min(92vw,400px)] rounded-t-[26px] rounded-b-[34px] border-[6px] border-b-[9px] border-white/75 bg-white/35 shadow-[inset_0_10px_30px_rgba(74,47,27,0.10),0_18px_40px_-18px_rgba(140,100,40,0.45)] backdrop-blur-[2px] ${
             danger ? "combo-hot" : ""
           }`}
           style={{ touchAction: "none" }}
@@ -897,7 +917,7 @@ export function LeoPop({ onExit }: { onExit: () => void }) {
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="leo-card max-h-[92vh] w-full max-w-sm overflow-y-auto p-6 text-center leo-scroll"
+              className="leo-card max-h-[92dvh] w-full max-w-sm overflow-y-auto p-6 text-center leo-scroll"
               initial={{ scale: 0.9, y: 30, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               transition={{ type: "spring", stiffness: 240, damping: 20 }}
@@ -1000,7 +1020,7 @@ export function LeoPop({ onExit }: { onExit: () => void }) {
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="leo-card max-h-[92vh] w-full max-w-sm overflow-y-auto p-6 text-center leo-scroll"
+              className="leo-card max-h-[92dvh] w-full max-w-sm overflow-y-auto p-6 text-center leo-scroll"
               initial={{ scale: 0.9, y: 30, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               transition={{ type: "spring", stiffness: 240, damping: 20 }}

@@ -121,18 +121,18 @@ export function LevelMap({
   }, []);
 
   return (
-    <div className="leo-bg h-screen w-full overflow-hidden">
+    <div className="leo-bg h-dvh w-full overflow-hidden">
       {/* ambient jungle/sea/space/candy buddies floating behind the map */}
       {Math.max(0, Math.min(WORLDS.length - 1, startWorld)) === 2 && (
         <SpaceSky className="pointer-events-none absolute inset-0 z-0" opacity={0.4} />
       )}
       <AmbientCartoons world={Math.max(0, Math.min(WORLDS.length - 1, startWorld))} count={6} opacity={0.13} />
       {/* fixed HUD */}
-      <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-2 bg-gradient-to-b from-[#fff7e6] via-[#fff7e6ee] to-transparent px-4 py-3">
+      <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-2 bg-gradient-to-b from-[#fff7e6] via-[#fff7e6ee] to-transparent px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={onBack}
-          className="pill cursor-pointer px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
+          className="pill min-h-[44px] cursor-pointer px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
         >
           ← Home
         </button>
@@ -140,7 +140,7 @@ export function LevelMap({
           type="button"
           onClick={onArcade}
           aria-label="Open LEO POP, the merge arcade"
-          className="pill cursor-pointer gap-1.5 px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
+          className="pill min-h-[44px] cursor-pointer gap-1.5 px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
         >
           <Sticker id="lion" size={16} />
           LEO POP
@@ -271,7 +271,7 @@ export function LevelMap({
                   whileHover={unlocked ? { scale: 1.08 } : { x: [0, -3, 3, -2, 2, 0] }}
                   whileTap={unlocked ? { scale: 0.94 } : {}}
                   aria-label={`Level ${i}${stars ? `, ${stars} stars` : unlocked ? ", your next quest" : ", locked"}`}
-                  className={`relative flex h-[58px] w-[58px] cursor-pointer items-center justify-center rounded-full border-[3.5px] font-display text-xl font-bold shadow-[0_5px_0_rgba(0,0,0,0.18)] ${
+                  className={`relative flex h-[58px] w-[58px] cursor-pointer items-center justify-center rounded-full border-[3.5px] font-display text-xl font-bold shadow-[0_5px_0_rgba(0,0,0,0.18)] after:absolute after:-inset-4 after:rounded-full after:content-[''] ${
                     isCurrent ? "anim-pulse-ring" : ""
                   } ${unlocked ? "text-white" : "bg-[#e8ddc4] text-[#b3a586] border-[#d3c39c]"}`}
                   style={
@@ -282,8 +282,8 @@ export function LevelMap({
                 >
                   {unlocked ? (save.done[i] && stars === 0 ? "✓" : i) : <Lock width={20} height={20} />}
                   {stars > 0 && (
-                    <div className="absolute -bottom-[26px] left-1/2 -translate-x-1/2">
-                      <StarRow n={stars} size={13} />
+                    <div className="absolute -bottom-[30px] left-1/2 -translate-x-1/2">
+                      <StarRow n={stars} size={16} />
                     </div>
                   )}
                 </motion.button>

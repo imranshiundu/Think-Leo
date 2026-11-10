@@ -139,7 +139,7 @@ export function ParentHQ({ open, onClose }: { open: boolean; onClose: () => void
         exit={{ y: 80, opacity: 0 }}
         transition={{ type: "spring", stiffness: 260, damping: 26 }}
         onClick={(e) => e.stopPropagation()}
-        className="leo-scroll max-h-[88vh] w-full max-w-md overflow-y-auto rounded-t-3xl border-[3px] border-white bg-[#fffaf0] p-5 shadow-2xl sm:rounded-3xl"
+        className="leo-scroll max-h-[88dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border-[3px] border-white bg-[#fffaf0] p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl"
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-display text-2xl font-black text-leo-ink">Parent HQ</h2>

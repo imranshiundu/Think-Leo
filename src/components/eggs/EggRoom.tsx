@@ -134,7 +134,7 @@ export function EggRoom() {
                 </span>
               )}
               {!entry.evolved && entry.count >= GROW_COPIES && (
-                <span className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border-2 border-leo-sun bg-white px-1.5 py-0.5 font-display text-[8px] font-bold text-leo-sun-deep">
+                <span className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border-2 border-leo-sun bg-white px-1.5 py-0.5 font-display text-[10px] font-bold text-leo-sun-deep">
                   CAN GROW!
                 </span>
               )}

@@ -97,8 +97,19 @@ export function PopSky({
         document.addEventListener("visibilitychange", onVis);
         loop();
 
+        /* stay crisp through rotations and window resizes (Egg3D's pattern) */
+        const ro = new ResizeObserver(() => {
+          const nw = host.clientWidth || 1;
+          const nh = host.clientHeight || 1;
+          camera.aspect = nw / nh;
+          camera.updateProjectionMatrix();
+          renderer.setSize(nw, nh, false); // CSS owns the style size
+        });
+        ro.observe(host);
+
         teardown = () => {
           cancelAnimationFrame(raf);
+          ro.disconnect();
           document.removeEventListener("visibilitychange", onVis);
           geo.dispose();
           bubbles.forEach((b) => (b.mesh.material as InstanceType<typeof THREE.Material>).dispose());

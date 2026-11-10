@@ -142,6 +142,27 @@
   }
 }
 
+/* ── phone hygiene (behaviour audit): tap flashes, rubber-banding,
+      double-tap-zoom lag and stray text selection all fight a game UI ── */
+html,
+body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+* {
+  touch-action: manipulation; /* kill the 300ms double-tap-zoom delay */
+}
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* ════════════════════════════════════════════════════════════════
    THINK LEO — juice layer
    Chunky buttons (Duolingo-style pressed edges), keyframes, cards
@@ -379,7 +400,8 @@
 /* respect kids' motion settings */
 @media (prefers-reduced-motion: reduce) {
   .anim-float, .anim-wiggle, .anim-flame, .anim-drift, .anim-spin-slow, .anim-pulse-ring,
-  .anim-bob-x, .trail-march, .rush-lines, .rush-aura, .anim-ring {
+  .anim-bob-x, .trail-march, .rush-lines, .rush-aura, .anim-ring, .anim-heartbeat,
+  .anim-shake, .anim-pop, .anim-slam {
     animation: none;
   }
 }

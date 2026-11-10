@@ -32,7 +32,7 @@ export function ZooBook({ open, onClose }: { open: boolean; onClose: () => void 
           onClick={onClose}
         >
           <motion.div
-            className="leo-card max-h-[88vh] w-full max-w-md overflow-y-auto p-5 leo-scroll"
+            className="leo-card max-h-[88dvh] w-full max-w-md overflow-y-auto p-5 leo-scroll pb-[max(1.25rem,env(safe-area-inset-bottom))]"
             initial={{ y: 60, scale: 0.96, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}
             exit={{ y: 40, scale: 0.97, opacity: 0 }}
@@ -53,7 +53,7 @@ export function ZooBook({ open, onClose }: { open: boolean; onClose: () => void 
                 type="button"
                 onClick={onClose}
                 aria-label="Close the Zoo Book"
-                className="pill cursor-pointer px-2 py-1.5 hover:bg-leo-cream"
+                className="pill flex h-11 w-11 cursor-pointer items-center justify-center p-0 hover:bg-leo-cream"
               >
                 <X width={16} height={16} className="text-leo-ink" />
               </button>

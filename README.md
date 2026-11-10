@@ -5,7 +5,7 @@ loops that make Duolingo and Candy Crush sticky — streaks, XP, hearts, stars,
 a winding level map, combo multipliers and a rich sound family — wrapped in a
 kid-safe, phone-first experience that also runs great on laptops and tablets.
 
-> **The bookshelf:** design & math in [`docs/ALGORITHM.md`](docs/ALGORITHM.md) · every icon in [`docs/ICONS.md`](docs/ICONS.md) · every animation in [`docs/ANIMATIONS.md`](docs/ANIMATIONS.md) · the whole journey in [`docs/END-TO-END.md`](docs/END-TO-END.md) · the kid test in [`docs/KID-TEST.md`](docs/KID-TEST.md)
+> **The bookshelf:** design & math in [`docs/ALGORITHM.md`](docs/ALGORITHM.md) · every icon in [`docs/ICONS.md`](docs/ICONS.md) · every animation in [`docs/ANIMATIONS.md`](docs/ANIMATIONS.md) · the whole journey in [`docs/END-TO-END.md`](docs/END-TO-END.md) · how it runs & sounds in [`docs/BEHAVIOUR-AUDIT.md`](docs/BEHAVIOUR-AUDIT.md) · the kid test in [`docs/KID-TEST.md`](docs/KID-TEST.md)
 
 ## What's inside
 

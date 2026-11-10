@@ -205,13 +205,14 @@ export function Play({
     return () => window.removeEventListener("keydown", h);
   }, [phase]);
 
-  /* music per screen */
+  /* music: the shell owns hub↔screen switches; Play owns its PHASES.
+     The phase map below is the whole contract — replay/practice used to
+     fall through it and run the whole level on the hub track. */
   useEffect(() => {
-    sfx.startMusic("play");
-    return () => {
-      sfx.startMusic("home");
-    };
-  }, []);
+    if (phase === "rush") sfx.startMusic("rush");
+    else if (phase === "results" || phase === "out") sfx.startMusic("home");
+    else sfx.startMusic("play"); // intro, play, reveal, rushIntro
+  }, [phase]);
 
   /* ── answer handling ─────────────────────────────────────────── */
 
@@ -441,18 +442,16 @@ export function Play({
       if (ok) {
         setRushScore((s) => s + 120);
         setRushHits((h) => h + 1);
-        setRushCombo((c) => {
-          const nc = c + 1;
-          sfx.combo(nc + 2);
-          return nc;
-        });
+        const nc = rushCombo + 1;
+        setRushCombo(nc);
+        sfx.combo(nc + 2);
       } else {
         setRushCombo(0);
         sfx.tap();
       }
       if (rushIdx < rushQs.length - 1) setRushIdx((i) => i + 1);
     },
-    [rushQs, rushIdx]
+    [rushQs, rushIdx, rushCombo]
   );
 
   const hearts = useLeo((s) => s.hearts);
@@ -477,15 +476,9 @@ export function Play({
     return () => window.clearInterval(id);
   }, [danger]);
 
-  /* music mood follows the phase: rush gets its own driving loop */
-  useEffect(() => {
-    if (phase === "rush") sfx.startMusic("rush");
-    else if (phase === "results" || phase === "out") sfx.startMusic("home");
-  }, [phase]);
-
   return (
     <div
-      className="relative h-screen w-full overflow-hidden"
+      className="relative h-dvh w-full overflow-hidden"
       style={{ background: `linear-gradient(180deg, ${world.wash[0]}, ${world.wash[1]})` }}
     >
       <QuestWatch />
@@ -570,11 +563,11 @@ export function Play({
       </AnimatePresence>
 
       {/* HUD */}
-      <div className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 px-4 py-3">
+      <div className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={onExit}
-          className="pill cursor-pointer px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
+          className="pill min-h-[44px] cursor-pointer px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
         >
           <X width={14} height={14} /> Map
         </button>
@@ -650,16 +643,21 @@ export function Play({
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -16 }}
-            className="absolute inset-0 z-[15] flex flex-col items-center justify-center px-6 pt-14"
+            className="absolute inset-0 z-[15] flex flex-col items-center overflow-y-auto px-6 pb-6 pt-[max(4.25rem,calc(env(safe-area-inset-top)+3.5rem))]"
           >
+            {/* m-auto centres when there's room and NEVER clips the top when
+                a tall round (count boards) overflows a short phone — the old
+                justify-center pushed the first rows under the HUD with no
+                scroll escape. */}
+            <div className="m-auto flex w-full max-w-2xl flex-col items-center">
             {/* progress + timer */}
-            <div className="mb-3 flex w-full max-w-2xl items-center justify-between">
+            <div className="mb-3 flex w-full items-center justify-between">
               <PawProgress current={qi} total={ROUND_COUNT} />
               <TimerRing left={timeLeft} total={qTimeTotal} />
             </div>
 
             {/* Leo + question card */}
-            <div className="flex w-full max-w-2xl items-end gap-2 sm:gap-3">
+            <div className="flex w-full items-end gap-2 sm:gap-3">
               <div className="hidden shrink-0 sm:block">
                 <Leo mood={leoMood} size={130} bubble={bubble} />
               </div>
@@ -679,6 +677,7 @@ export function Play({
             <p className="mt-3 font-display text-sm font-semibold text-leo-ink md:hidden">
               {bubble ?? ""}
             </p>
+            </div>
           </motion.section>
         )}
 
@@ -721,9 +720,10 @@ export function Play({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.06 }}
             transition={{ duration: 0.12 }}
-            className="absolute inset-0 z-[15] flex flex-col items-center justify-center px-6 pt-10"
+            className="absolute inset-0 z-[15] flex flex-col items-center overflow-y-auto px-6 pb-4 pt-[max(3.75rem,calc(env(safe-area-inset-top)+3rem))]"
           >
-            <div className="mb-2 flex w-full max-w-xl items-center justify-between">
+            <div className="m-auto flex w-full max-w-xl flex-col items-center">
+            <div className="mb-2 flex w-full items-center justify-between">
               <span className="pill px-3 py-1 font-display text-sm font-bold text-leo-berry-deep">
                 ×2 RUSH
               </span>
@@ -741,7 +741,7 @@ export function Play({
                 </span>
               )}
             </div>
-            <div className="leo-card w-full max-w-xl p-5">
+            <div className="leo-card w-full p-5">
               <h2 className="text-center font-display text-xl font-bold text-leo-ink">{rushQ.prompt}</h2>
               <div className="mt-4">
                 <QuestionStage q={rushQ} reveal={false} picked={null} onAnswer={rushAnswer} rushMode />
@@ -750,6 +750,7 @@ export function Play({
             <div className="mt-3 flex items-center gap-3">
               <Leo mood="excited" size={92} />
               <div className="font-display text-3xl font-bold text-leo-ink">{rushScore}</div>
+            </div>
             </div>
           </motion.section>
         )}
@@ -782,7 +783,15 @@ export function Play({
                   </ChunkyButton>
                 )}
                 {refills > 0 && (
-                  <ChunkyButton color="grape" onClick={() => { doRefill(); sfx.flame(); setPhase("intro"); }}>
+                  <ChunkyButton
+                    color="grape"
+                    onClick={() => {
+                      if (doRefill()) {
+                        sfx.flame();
+                        setPhase("intro");
+                      }
+                    }}
+                  >
                     <span className="inline-flex items-center gap-1.5">
                       <Ticket width={17} height={17} /> Use refill ({refills})
                     </span>
@@ -937,6 +946,7 @@ export function Play({
 function QuestWatch() {
   const { board, progress, claimed } = useQuests();
   const seen = useRef<Record<string, boolean>>({});
+  const toastTimer = useRef<number | null>(null);
   const [toast, setToast] = useState<{ label: string; key: number } | null>(null);
 
   useEffect(() => {
@@ -946,11 +956,19 @@ function QuestWatch() {
         seen.current[q.id] = true;
         setToast({ label: q.label, key: Date.now() });
         sfx.questDone();
-        window.setTimeout(() => setToast(null), 2800);
+        if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+        toastTimer.current = window.setTimeout(() => setToast(null), 2800);
       }
       if (!done) seen.current[q.id] = false;
     });
   }, [board, progress, claimed]);
+
+  /* the toast timer must not outlive the component */
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+    };
+  }, []);
 
   return (
     <AnimatePresence>
@@ -1521,7 +1539,7 @@ function FeedLeoGame({
                 initial={{ y: -34, opacity: 0, scale: 0.5 }}
                 animate={{ y: 0, opacity: 1, scale: 1 }}
                 transition={{ type: "spring", stiffness: 320, damping: 18 }}
-                className="absolute cursor-pointer"
+                className="absolute cursor-pointer p-2 -m-2"
                 style={{ left: 30 + (i % 6) * 19, top: 18 + Math.floor(i / 6) * 17 }}
               >
                 <Sticker id={snack} size={22} />

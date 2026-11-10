@@ -31,7 +31,7 @@ import { NapScreen } from "@/components/game/ParentHQ";
 import { Sticker } from "@/components/leo/stickers";
 import { Leo } from "@/components/leo/Leo";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type View = "home" | "map" | "play" | "arcade" | "eggs" | "feed";
 
@@ -63,7 +63,7 @@ export default function ThinkLeo() {
 
   /* audio unlock on the first gesture (browser autoplay policy) */
   useEffect(() => {
-    const h = () => sfx.unlock();
+    const h = () => sfx.unlock(true);
     window.addEventListener("pointerdown", h, { passive: true });
     window.addEventListener("keydown", h);
     return () => {
@@ -113,55 +113,71 @@ export default function ThinkLeo() {
     return today && s.playToday.ms >= s.dailyCapMin * 60000 + s.playToday.bonus;
   });
 
-  /* ── level-transition wipe: every jump into a level is a moment ── */
+  /* ── level-transition wipe: every jump into a level is a moment ──
+     Sound + timers live OUTSIDE the state updaters: React may invoke an
+     updater twice (StrictMode), and side effects inside one fire twice
+     with it — a double wipe sound, double navigation timers. A ref is the
+     honest "already running" flag. */
   const [wipe, setWipe] = useState<number | null>(null);
+  const wipeRef = useRef<number | null>(null);
   const goLevel = useCallback((i: number) => {
-    setWipe((cur) => {
-      if (cur !== null) return cur; // a wipe is already running
-      sfx.wipe();
-      window.setTimeout(() => {
-        setLevelIdx(i);
-        setView("play");
-      }, 560);
-      window.setTimeout(() => setWipe(null), 1250);
-      return i;
-    });
+    if (wipeRef.current !== null) return; // a wipe is already running
+    wipeRef.current = i;
+    sfx.wipe();
+    setWipe(i);
+    window.setTimeout(() => {
+      setLevelIdx(i);
+      setView("play");
+    }, 560);
+    window.setTimeout(() => {
+      setWipe(null);
+      wipeRef.current = null;
+    }, 1250);
   }, []);
 
   /* the arcade gets its own berry-coloured curtain */
   const [arcadeWipe, setArcadeWipe] = useState(false);
+  const arcadeWipeRef = useRef(false);
   const goArcade = useCallback(() => {
-    setArcadeWipe((cur) => {
-      if (cur) return cur;
-      sfx.wipe();
-      window.setTimeout(() => setView("arcade"), 560);
-      window.setTimeout(() => setArcadeWipe(false), 1250);
-      return true;
-    });
+    if (arcadeWipeRef.current) return;
+    arcadeWipeRef.current = true;
+    sfx.wipe();
+    setArcadeWipe(true);
+    window.setTimeout(() => setView("arcade"), 560);
+    window.setTimeout(() => {
+      setArcadeWipe(false);
+      arcadeWipeRef.current = false;
+    }, 1250);
   }, []);
 
   /* the egg game gets a sunrise curtain — warm like a shell */
   const [eggWipe, setEggWipe] = useState(false);
+  const eggWipeRef = useRef(false);
   const goEggs = useCallback(() => {
-    setEggWipe((cur) => {
-      if (cur) return cur;
-      sfx.wipe();
-      window.setTimeout(() => setView("eggs"), 560);
-      window.setTimeout(() => setEggWipe(false), 1250);
-      return true;
-    });
+    if (eggWipeRef.current) return;
+    eggWipeRef.current = true;
+    sfx.wipe();
+    setEggWipe(true);
+    window.setTimeout(() => setView("eggs"), 560);
+    window.setTimeout(() => {
+      setEggWipe(false);
+      eggWipeRef.current = false;
+    }, 1250);
   }, []);
 
   /* the feed gets a galaxy curtain — grape to teal, like a night sky */
   const [feedWipe, setFeedWipe] = useState(false);
+  const feedWipeRef = useRef(false);
   const goFeed = useCallback(() => {
-    setFeedWipe((cur) => {
-      if (cur) return cur;
-      sfx.wipe();
-      window.setTimeout(() => setView("feed"), 560);
-      window.setTimeout(() => setFeedWipe(false), 1250);
-      return true;
-    });
+    if (feedWipeRef.current) return;
+    feedWipeRef.current = true;
+    sfx.wipe();
+    setFeedWipe(true);
+    window.setTimeout(() => setView("feed"), 560);
+    window.setTimeout(() => {
+      setFeedWipe(false);
+      feedWipeRef.current = false;
+    }, 1250);
   }, []);
 
   /* next unmastered level */

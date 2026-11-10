@@ -94,6 +94,7 @@ export function EggGame({ onExit }: { onExit: () => void }) {
 
   const planRef = useRef<EggPlan | null>(null);
   const milestoneRef = useRef(0);
+  const crackRef = useRef(0);
   const firedRef = useRef(false);
   const lastSparkAt = useRef(0);
 
@@ -138,6 +139,7 @@ export function EggGame({ onExit }: { onExit: () => void }) {
     if (k === "spark") lastSparkAt.current = Date.now();
     firedRef.current = false;
     milestoneRef.current = 0;
+    crackRef.current = 0;
     setPayout(null);
     setKind(k);
     setCrack(0);
@@ -153,17 +155,18 @@ export function EggGame({ onExit }: { onExit: () => void }) {
     const step = (now: number) => {
       const dt = now - last;
       last = now;
-      setCrack((c) => {
-        const next = Math.min(1, c + dt / HOLD_MS);
-        // shell ticks: the egg talks back as fissures spread
-        const stage = next > 0.8 ? 3 : next > 0.5 ? 2 : next > 0.22 ? 1 : 0;
-        if (stage > milestoneRef.current) {
-          milestoneRef.current = stage;
-          sfx.eggCrack();
-          buzz(12);
-        }
-        return next;
-      });
+      // computed OUTSIDE the state updater: sounds and haptics inside an
+      // updater run twice under StrictMode and violate render purity
+      const next = Math.min(1, crackRef.current + dt / HOLD_MS);
+      crackRef.current = next;
+      setCrack(next);
+      // shell ticks: the egg talks back as fissures spread
+      const stage = next > 0.8 ? 3 : next > 0.5 ? 2 : next > 0.22 ? 1 : 0;
+      if (stage > milestoneRef.current) {
+        milestoneRef.current = stage;
+        sfx.eggCrack();
+        buzz(12);
+      }
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
@@ -249,7 +252,7 @@ export function EggGame({ onExit }: { onExit: () => void }) {
               onExit();
             }}
             aria-label="Back home"
-            className="leo-card flex h-10 w-10 items-center justify-center p-0"
+            className="leo-card flex h-11 w-11 items-center justify-center p-0"
           >
             <ArrowLeft width={20} height={20} className="text-leo-ink" />
           </button>
@@ -362,13 +365,13 @@ export function EggGame({ onExit }: { onExit: () => void }) {
                     aria-label={`Pick the ${meta.name}${meta.cost ? `, costs ${meta.cost} stars` : ", free"}`}
                   >
                     {k === "royal" && freeRoyal && (
-                      <span className="anim-pulse-ring absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border-2 border-leo-sun bg-white px-2 py-0.5 font-display text-[9px] font-bold text-leo-sun-deep">
+                      <span className="anim-pulse-ring absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border-2 border-leo-sun bg-white px-2 py-0.5 font-display text-[11px] font-bold text-leo-sun-deep">
                         FREE today
                       </span>
                     )}
                     <CssEgg kind={k} size={54} />
                     <span className="font-display text-xs font-bold text-leo-ink">{meta.name}</span>
-                    <span className="text-[9px] leading-tight text-leo-ink-soft">{meta.blurb}</span>
+                    <span className="text-[11px] leading-tight text-leo-ink-soft">{meta.blurb}</span>
                     <span className={`pill px-2 py-0.5 font-display text-[11px] font-bold ${tooPoor ? "text-leo-ink-soft" : "text-leo-ink"}`}>
                       {k === "spark" ? (
                         cooling ? "warming…" : "FREE"
@@ -417,7 +420,7 @@ export function EggGame({ onExit }: { onExit: () => void }) {
             <p className="relative font-display text-lg font-bold text-leo-ink">
               {EGG_KINDS[kind].name} — press and HOLD
             </p>
-            <div className="relative mt-2 h-[44vh] w-full max-w-sm" style={{ touchAction: "none" }}>
+            <div className="relative mt-2 h-[44dvh] w-full max-w-sm" style={{ touchAction: "none" }}>
               <Egg3D
                 kind={kind}
                 crack={crack}

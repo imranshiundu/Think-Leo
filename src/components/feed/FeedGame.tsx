@@ -226,7 +226,7 @@ export function FeedGame({ onExit }: { onExit: () => void }) {
 
   return (
     <div
-      className="relative h-screen w-full overflow-hidden"
+      className="relative h-dvh w-full overflow-hidden"
       style={{ background: "linear-gradient(180deg, #f3e9ff 0%, #ffecf3 55%, #fff3d6 100%)" }}
     >
       <FeedSky className="pointer-events-none absolute inset-0 z-0" opacity={0.55} />
@@ -234,14 +234,14 @@ export function FeedGame({ onExit }: { onExit: () => void }) {
       <ConfettiBurst fireKey={confettiKey} count={90} />
 
       {/* ── top bar ── */}
-      <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-2 px-4 py-3">
+      <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-2 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={() => {
             sfx.click();
             onExit();
           }}
-          className="pill cursor-pointer px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
+          className="pill min-h-[44px] cursor-pointer px-3 py-1.5 font-display text-sm text-leo-ink hover:bg-leo-cream"
         >
           <X width={14} height={14} /> Home
         </button>
@@ -276,7 +276,7 @@ export function FeedGame({ onExit }: { onExit: () => void }) {
         {card && (
           <motion.div
             key={card.key}
-            className="absolute inset-x-0 top-[76px] bottom-[178px] z-20 flex items-center justify-center px-5"
+            className="absolute inset-x-0 top-[calc(4.75rem+env(safe-area-inset-top))] bottom-[178px] z-20 flex items-center justify-center px-5"
             initial={{ y: 90, opacity: 0, scale: 0.94 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: -130, opacity: 0, scale: 0.9, transition: { duration: 0.24 } }}

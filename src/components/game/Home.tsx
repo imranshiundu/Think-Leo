@@ -226,7 +226,7 @@ export function Home({
   };
 
   return (
-    <div className="leo-bg h-screen w-full overflow-y-auto leo-scroll">
+    <div className="leo-bg h-dvh w-full overflow-y-auto leo-scroll">
       <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 md:px-8">
         {/* ── top bar ── */}
         <header className="flex flex-wrap items-center gap-2">
@@ -278,7 +278,7 @@ export function Home({
 
         {/* ── hero ── */}
         <section className="mt-4 grid flex-1 grid-cols-1 gap-4 md:grid-cols-[1.1fr_1fr]">
-          <div className="leo-card relative flex items-center justify-center gap-4 overflow-hidden p-6">
+          <div className="leo-card relative flex flex-wrap items-center justify-center gap-4 overflow-hidden p-6">
             <AmbientCartoons world={Math.floor((currentLevel - 1) / LEVELS_PER_WORLD)} count={5} opacity={0.13} />
             <Sparkles width={86} height={86} className="pointer-events-none absolute -right-5 -top-5 text-leo-sun opacity-15" />
             <div className="shrink-0">

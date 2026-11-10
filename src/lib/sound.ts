@@ -64,6 +64,9 @@ class LeoSound {
   private reverbSend: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
   private duckTimer: number | null = null;
+  /** true while a GESTURE-driven resume() is in flight — cues scheduled in
+   *  that window play the instant the context wakes (first tap isn't mute). */
+  private resuming = false;
 
   /* music: three real tracks, at most one playing */
   private tracks: Partial<Record<MusicMode, HTMLAudioElement>> = {};
@@ -74,11 +77,23 @@ class LeoSound {
   sfxOn = true;
   musicOn = true;
 
-  /** Call on the first user gesture. Safe to call repeatedly. */
-  unlock() {
+  /**
+   * Call on the first user gesture. Safe to call repeatedly.
+   * `fromGesture` marks a resume that the browser MUST honour (it is
+   * happening inside a real pointer/key event) — only that path lets
+   * cues schedule while the context is still waking up.
+   */
+  unlock(fromGesture = false) {
     try {
       if (!this.ctx) this.buildGraph();
-      if (this.ctx && this.ctx.state === "suspended") void this.ctx.resume();
+      if (this.ctx && this.ctx.state === "suspended") {
+        if (fromGesture) this.resuming = true;
+        const p = this.ctx.resume();
+        const clear = () => {
+          this.resuming = false;
+        };
+        void p.then(clear, clear);
+      }
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", this.onVis);
         document.addEventListener("visibilitychange", this.onVis);
@@ -95,7 +110,14 @@ class LeoSound {
       const cur = this.currentTrack ? this.tracks[this.currentTrack] : null;
       cur?.pause(); // battery manners
     } else {
-      if (this.ctx && this.ctx.state === "suspended") void this.ctx.resume();
+      if (this.ctx && this.ctx.state === "suspended") {
+        this.resuming = true;
+        const p = this.ctx.resume();
+        const clear = () => {
+          this.resuming = false;
+        };
+        void p.then(clear, clear);
+      }
       this.tryStartMusic();
     }
   };
@@ -334,8 +356,17 @@ class LeoSound {
     this.noise({ at: at + 0.02, dur: 0.18, vol: vol * 0.5, f0: 220, f1: 900, q: 0.8 });
   }
 
+  /**
+   * The play gate. Beyond the on/off switch the context must be RUNNING
+   * (or mid-resume from a real gesture): `currentTime` freezes while a
+   * context is suspended, so cues scheduled then would all pile onto the
+   * same instant and BLAST simultaneously the moment sound unlocked —
+   * the first splash used to do exactly that. Pre-gesture cues are now
+   * simply dropped; the visuals carry the splash until the kid taps.
+   */
   private guard(): boolean {
-    return this.sfxOn && !!this.ctx;
+    if (!this.sfxOn || !this.ctx) return false;
+    return this.ctx.state === "running" || this.resuming;
   }
 
   /**

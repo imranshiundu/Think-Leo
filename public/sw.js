@@ -16,7 +16,7 @@
  * still falls back to the last-good copy. Installing v5 also deletes every
  * v1–v4 cache, forcing all devices onto fresh code.
  */
-const VERSION = "think-leo-v8";
+const VERSION = "think-leo-v9";
 const CORE = [
   "/",
   "/manifest.webmanifest",

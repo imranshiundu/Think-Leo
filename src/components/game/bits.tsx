@@ -40,6 +40,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LeagueBadge, type BadgeId } from "@/components/leo/badges";
 import { DAILY_GOAL_XP, leagueOf, playerLevelFromXp, xpToNext, type QuestDef } from "@/lib/game";
+import { sfx } from "@/lib/sound";
 import { useHearts, useLeo } from "@/lib/store";
 
 /* ── Chunky 3D button ──────────────────────────────────────────── */
@@ -383,7 +384,7 @@ export function SoundToggles({
         type="button"
         onClick={onSfx}
         aria-label={sfxOn ? "Turn sound effects off" : "Turn sound effects on"}
-        className="pill cursor-pointer px-2.5 py-1.5 hover:bg-leo-cream"
+        className="pill h-11 w-11 cursor-pointer justify-center hover:bg-leo-cream"
       >
         {sfxOn ? <Volume2 width={15} height={15} className="text-leo-ink" /> : <VolumeX width={15} height={15} className="text-leo-ink-soft" />}
       </button>
@@ -391,7 +392,7 @@ export function SoundToggles({
         type="button"
         onClick={onMusic}
         aria-label={musicOn ? "Turn music off" : "Turn music on"}
-        className="pill cursor-pointer px-2.5 py-1.5 hover:bg-leo-cream"
+        className="pill h-11 w-11 cursor-pointer justify-center hover:bg-leo-cream"
       >
         <Music width={15} height={15} className={musicOn ? "text-leo-ink" : "text-leo-ink-soft"} />
       </button>
@@ -531,7 +532,13 @@ export function QuestRow({
       {claimed ? (
         <span className="pill px-2 py-1 text-[11px] font-bold text-leo-leaf-deep">+{quest.rewardXp} XP</span>
       ) : done ? (
-        <ChunkyButton color="sun" size="sm" onClick={onClaim} ariaLabel={`Claim ${quest.label} reward`}>
+        <ChunkyButton
+          color="sun"
+          size="sm"
+          className="inline-flex min-h-[44px] items-center justify-center"
+          onClick={onClaim}
+          ariaLabel={`Claim ${quest.label} reward`}
+        >
           Claim
         </ChunkyButton>
       ) : (
@@ -587,12 +594,13 @@ export function AchievementToasts() {
 
   useEffect(() => {
     if (!current) return;
+    sfx.achievement(); // badges used to arrive SILENTLY while the cue sat unused
     const t = window.setTimeout(dismiss, 4200);
     return () => window.clearTimeout(t);
   }, [current, dismiss]);
 
   return (
-    <div className="pointer-events-none fixed right-4 top-4 z-[80] flex w-[300px] flex-col gap-2">
+    <div className="pointer-events-none fixed right-4 top-[max(1rem,env(safe-area-inset-top))] z-[80] flex w-[300px] flex-col gap-2">
       <AnimatePresence>
         {current && (
           <motion.div

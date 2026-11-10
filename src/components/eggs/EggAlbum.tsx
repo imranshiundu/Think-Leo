@@ -78,7 +78,7 @@ export function EggAlbum() {
                 {known ? c.name : "???"}
               </span>
               <span
-                className="rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white"
+                className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
                 style={{ background: meta.color }}
               >
                 {c.rarity}
