@@ -48,7 +48,7 @@ import { buildPlan, makeQuestion, makeRushQuestion, WORLD_TILES, type Question }
 import { sfx } from "@/lib/sound";
 import { useLeo, useQuests } from "@/lib/store";
 import { AnimatePresence, motion } from "framer-motion";
-import { Eye, EyeOff, Medal, PartyPopper, Play as PlayIcon, RotateCcw, Sparkles, Target, Ticket, X } from "lucide-react";
+import { Check, Eye, EyeOff, Medal, PartyPopper, Play as PlayIcon, RotateCcw, Sparkles, Target, Ticket, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Phase = "intro" | "play" | "reveal" | "rushIntro" | "rush" | "out" | "results";
@@ -1236,7 +1236,7 @@ function QuestionStage({
                 data-state={isCorrect ? "correct" : isWrongPick ? "wrong" : undefined}
                 whileHover={!reveal ? { y: -3 } : undefined}
                 whileTap={!reveal ? { scale: 0.96 } : undefined}
-                className={`answer-bubble flex min-h-[64px] cursor-pointer items-center justify-center px-3 py-3 ${
+                className={`answer-bubble relative flex min-h-[64px] cursor-pointer items-center justify-center px-3 py-3 ${
                   isArt
                     ? ""
                     : q.kind === "truefalse"
@@ -1261,6 +1261,17 @@ function QuestionStage({
                   <Sticker id={opt as StickerId} size={q.kind === "shadow" ? 60 : 52} />
                 ) : (
                   opt
+                )}
+                {/* v9: colour + shape — right/wrong reads even with colour-blind eyes */}
+                {isCorrect && (
+                  <span className="anim-pop absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-leo-leaf-deep bg-white" aria-hidden>
+                    <Check width={14} height={14} className="text-leo-leaf-deep" strokeWidth={3.5} />
+                  </span>
+                )}
+                {isWrongPick && (
+                  <span className="anim-pop absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-leo-berry-deep bg-white" aria-hidden>
+                    <X width={14} height={14} className="text-leo-berry-deep" strokeWidth={3.5} />
+                  </span>
                 )}
               </motion.button>
             );

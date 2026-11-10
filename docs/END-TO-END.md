@@ -49,7 +49,7 @@ A parent opens `thinkleo.vercel.app` in a phone browser. Nothing in the UI
 ever says "PWA" — the Home screen simply offers **"Add to Home Screen"**.
 Installing gives a real Leo icon (`public/icons/` — see
 [`ICONS.md`](ICONS.md)), a full-screen standalone app with safe-area padding,
-and a service worker (`public/sw.js`, v7) that precaches the shell, icons and
+and a service worker (`public/sw.js`, v8) that precaches the shell, icons and
 the three music tracks.
 
 **First light is a show, not a spinner.** The splash replays the home-screen
@@ -59,6 +59,9 @@ loading beat, a star bursts with a fanfare, the curtain lifts. Underneath,
 the splash is silently doing a real job — it is the **hydration cover**, so
 the app never flashes a half-loaded save. Beat-by-beat:
 [`ANIMATIONS.md` §3](ANIMATIONS.md#3-the-startup-show-gsap-37-s-once-per-session).
+Then a **first-run tour** (v9) plays once: four bottom-sheet beats where Leo
+introduces the map, the arcade doors and the daily flame — skippable, and
+never seen again (`tourDone`).
 
 ## 2. Home — the hub
 
@@ -172,14 +175,20 @@ The retention math and psychology per mechanic:
 
 Kids own the game; this room belongs to the adult — so the **entrance is a
 gate**: press-and-hold the paw for ~2.5 s (a 4-year-old taps; holding is
-hard). Three panels, zero jargon:
+hard). Four panels, zero jargon:
 
 - **TODAY** — minutes played against the family window, XP, streak, levels
   finished.
 - **SKILLS** — per-puzzle mastery bars straight from the Flow Ranger data
-  ("counting: strong, times tables: wobbly") across all 11 skills.
+  ("counting: strong, times tables: wobbly"), **grouped under the four CBC
+  Mathematical Activities strands** (Pre-Number Activities · Numbers ·
+  Measurement · Geometry — measurement and geometry show as "coming").
 - **CONTROLS** — the daily play window (**15 / 30 / 60 min or open-ended**),
   a **+15 min extension**, sound and music toggles, and a hold-gated **reset**.
+- **SAVE CODE** — copy a portable code with the kid's whole progress, paste
+  it into Parent HQ on a new device behind a hold gate; stars, streak and
+  collections move house. Nothing leaves the devices
+  ([`ALGORITHM.md` §19](ALGORITHM.md#19-v9--the-family-release-save-codes-the-first-run-tour-cbc-strands)).
 
 When the window runs out, the whole app flips to the **nap screen**: Leo
 asleep, zzz drifting, day done — a boundary that feels like bedtime, not a
@@ -199,10 +208,11 @@ paywall. Extensions are a grown-up choice, made in one hold.
 
 ## 9. How it stays honest
 
-- **Three simulation suites** run the rules without a browser: `sim-v4.ts`
+- **Four simulation suites** run the rules without a browser: `sim-v4.ts`
   (unlocks, question factory, practice guarantee), `sim-feed.ts` (rarity
   table, pity, MEGA, affinity, streak luck), `sim-store.ts` (levels always
-  end, streaks always record, feed economy).
+  end, streaks always record, feed economy), `sim-savecode.ts` (the save
+  codec: round-trip, line-wrap, tamper and garbage proof).
 - **Kid-brain field testing** on the *live* deployment with a real browser at
   phone viewport — tap the shiniest thing, answer wrong on purpose, freeze
   under pressure, go offline. Findings and the fixes shipped the same day:

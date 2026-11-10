@@ -872,3 +872,69 @@ Still local-only: nothing leaves the device.
   digit — "a pre-reader can't read 6 in a 28 px ring" (docs/KID-TEST.md).
 - `PawProgress`: 18/22 → 24/30 px paws, future paws opacity 45 → 70 % —
   the kid can count their own progress across the 8 rounds.
+
+---
+
+## 19. v9 — the family release: save codes, the first-run tour, CBC strands
+
+### 19.1 The save code — a kid's progress becomes portable
+
+Everything lives in one device's localStorage, which is perfect for privacy
+and terrible for "we got a new phone". The save code (`src/lib/savecode.ts`,
+regression `scripts/sim-savecode.ts`) is the escape hatch, in Parent HQ:
+
+```
+LEO1.<base64url(JSON of the ~47 durable fields)>.<fnv1a-32 checksum, 8 hex>
+```
+
+- **Durable only** — stars, XP, streak, hearts, refill tickets, all three
+  arcade collections, `skillStats`, the play window. Runtime fields
+  (`_hydrated`, toast queues) never travel.
+- **Day-stamps ride along** so claimed dailies don't re-mint on the new
+  device (the daily egg stays claimed, the MEGA gift stays claimed).
+- **Restore is hold-gated** (2.5 s paw, same as the HQ entrance) because it
+  *replaces* the save on that device — "the code wins", one predictable rule.
+- **Kid-proof failure:** whitespace/line-wraps are stripped (chat apps wrap
+  long codes), the checksum catches truncation and typos, and every failure
+  is a friendly sentence ("copy the whole thing again, including LEO1") —
+  never a corrupted save. Sim suite: round-trip, wrap-proof, tamper-proof,
+  garbage-proof (11 checks).
+
+### 19.2 The first-run tour
+
+Four bottom-sheet beats, Leo narrating (`Home.tsx` `TourOverlay`): "Hi, I'm
+Leo!" → the map → the three arcade doors → come back every day. Next/Skip,
+progress dots, one `roar()` on finish. Shown **once** (`tourDone` in the
+save), gated on `_hydrated` so a returning kid never sees it flash during
+rehydration. A wiped save is a brand-new kid — `reset()` brings the tour
+back by design.
+
+### 19.3 CBC strand grouping (Parent HQ → Skills)
+
+The mastery bars are now grouped under the four official strands of Kenya's
+CBC **Mathematical Activities** (KICD PP2 Mathematical Activities design,
+2024 rationalization) — `src/lib/cbc.ts`:
+
+| CBC strand | Think Leo skills that feed it |
+| --- | --- |
+| **Pre-Number Activities** (sorting & grouping · matching & pairing · ordering · patterns) | odd-one-out · shadow match · memory · sequences · tap-the-target |
+| **Numbers** (counting · putting together & taking away · number value · tables) | count · add & subtract · more-or-less · true-or-trap · times tables · feed Leo |
+| **Measurement** (mass · capacity · time · money · area) | *coming* — new puzzle kinds are being drawn |
+| **Geometry** (lines · shapes) | *coming* |
+
+The mapping is honest: no skill is stretched into a strand it doesn't belong
+to, and the two uncovered strands say "coming" instead of silently
+disappearing.
+
+### 19.4 Accessibility & correctness sweep
+
+- **Answer feedback is now colour + shape:** the correct card gets a green
+  ✓ badge, the wrong pick a berry ✗ badge — readable with colour-blind eyes
+  (the colours alone were the only signal before).
+- **`:focus-visible`** gets a grape 3 px outline globally — keyboard and
+  switch users always see where they are.
+- **HoldButton purity fix** (a real bug shipped in v8): `tick()` called
+  `onDone()` *inside* the `setProgress` updater — a side effect during
+  render that fired React's setstate-in-render error (the "1 Issue" dev
+  overlay). The hold value now lives in a ref and `onDone()` fires outside
+  any updater. Verified: zero warnings in the browser after the fix.

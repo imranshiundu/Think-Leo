@@ -38,6 +38,7 @@ import {
 } from "@/lib/game";
 import { useComeback, useEggCollection, useEggNest, useFeedMegaReady, useFeedWall, useLeo, useMergeEggReady, useQuests, useZooProgress } from "@/lib/store";
 import { sfx } from "@/lib/sound";
+import type { Mood } from "@/lib/game";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Brain,
@@ -66,6 +67,85 @@ type InstallPromptEvent = Event & {
 
 const ACH_SHELF = Object.values(ACH_DEFINITIONS);
 
+/* ── the first-run tour (v9): four beats, Leo narrates, tap Next or Skip ── */
+const TOUR_STEPS: { mood: Mood; title: string; body: string }[] = [
+  {
+    mood: "happy",
+    title: "Hi, I'm Leo!",
+    body: "This game is YOURS. I keep every star, streak and friend safe right here on this device.",
+  },
+  {
+    mood: "excited",
+    title: "Your adventure map",
+    body: "The green PLAY button jumps straight into today's level. Six worlds and sixty levels are waiting!",
+  },
+  {
+    mood: "wow",
+    title: "Three toy rooms",
+    body: "LEO FEED, LEO POP and LEO EGGS — pure fun, zero maths. Show up and they fill with surprises.",
+  },
+  {
+    mood: "cheer",
+    title: "Come back every day!",
+    body: "Your flame grows each day you play, and streak freezes catch you if you miss one. Ready? Let's make today count!",
+  },
+];
+
+function TourOverlay({ step, onNext, onSkip }: { step: number; onNext: () => void; onSkip: () => void }) {
+  const s = TOUR_STEPS[Math.min(step, TOUR_STEPS.length - 1)];
+  const last = step >= TOUR_STEPS.length - 1;
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[55] flex items-end justify-center bg-[#2b2440b3]"
+      role="dialog"
+      aria-label="Welcome tour"
+    >
+      <motion.div
+        key={step}
+        initial={{ y: 90, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 280, damping: 26 }}
+        className="w-full max-w-md rounded-t-3xl border-[3px] border-white bg-[#fffaf0] p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl"
+      >
+        <div className="flex items-start gap-3">
+          <Leo mood={s.mood} size={92} />
+          <div className="min-w-0 flex-1 pt-1">
+            <h3 className="font-display text-xl font-black text-leo-ink">{s.title}</h3>
+            <p className="mt-1 text-sm font-semibold leading-relaxed text-leo-ink-soft">{s.body}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5" aria-label={`Step ${step + 1} of ${TOUR_STEPS.length}`}>
+            {TOUR_STEPS.map((_, i) => (
+              <span
+                key={i}
+                className={`h-2.5 w-2.5 rounded-full ${i === step ? "bg-leo-sun" : "bg-leo-line"}`}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            {!last && (
+              <button
+                type="button"
+                onClick={onSkip}
+                className="cursor-pointer rounded-xl px-4 py-2.5 font-display text-sm font-bold text-leo-ink-soft hover:bg-leo-sand"
+              >
+                Skip
+              </button>
+            )}
+            <ChunkyButton color={last ? "leaf" : "sun"} onClick={onNext} ariaLabel={last ? "Finish the tour" : "Next tour step"}>
+              {last ? "Let's go!" : "Next"}
+            </ChunkyButton>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export function Home({
   onPlay,
   onMap,
@@ -92,6 +172,10 @@ export function Home({
 
   const [installEvt, setInstallEvt] = useState<InstallPromptEvent | null>(null);
   const [hqOpen, setHqOpen] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
+  /* the tour shows once — only after the save has actually hydrated, so a
+     returning kid never sees it flash (zustand rehydrates post-mount) */
+  const showTour = save._hydrated && !save.tourDone;
   useEffect(() => {
     const h = (e: Event) => {
       e.preventDefault();
@@ -658,6 +742,27 @@ export function Home({
 
         <AnimatePresence>
           {hqOpen && <ParentHQ open onClose={() => setHqOpen(false)} />}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showTour && (
+            <TourOverlay
+              step={tourStep}
+              onNext={() => {
+                sfx.click();
+                if (tourStep >= TOUR_STEPS.length - 1) {
+                  sfx.roar();
+                  save.finishTour();
+                } else {
+                  setTourStep((s) => s + 1);
+                }
+              }}
+              onSkip={() => {
+                sfx.click();
+                save.finishTour();
+              }}
+            />
+          )}
         </AnimatePresence>
       </div>
     </div>

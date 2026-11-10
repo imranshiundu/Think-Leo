@@ -17,6 +17,7 @@
 
 import { Leo } from "@/components/leo/Leo";
 import { sfx } from "@/lib/sound";
+import { skillsByStrand } from "@/lib/cbc";
 import { useLeo } from "@/lib/store";
 import { AnimatePresence, motion } from "framer-motion";
 import { RotateCcw, X } from "lucide-react";
@@ -57,27 +58,30 @@ export function HoldButton({
   const raf = useRef<number>(0);
   const holding = useRef(false);
   const last = useRef(0);
+  const val = useRef(0); // mirror of progress — updaters must stay pure
 
   const tick = (t: number) => {
     if (!holding.current) return;
     const dt = (t - last.current) / 1000;
     last.current = t;
-    setProgress((p) => {
-      const np = Math.min(1, p + dt / seconds);
-      if (np >= 1) {
-        holding.current = false;
-        sfx.click();
-        onDone();
-        return 0;
-      }
-      raf.current = requestAnimationFrame(tick);
-      return np;
-    });
+    val.current = Math.min(1, val.current + dt / seconds);
+    setProgress(val.current);
+    if (val.current >= 1) {
+      // finish OUTSIDE any state updater — onDone opens modals / applies saves,
+      // and React forbids setState-during-render (it fired the dev overlay in v8)
+      holding.current = false;
+      sfx.click();
+      onDone();
+      return;
+    }
+    raf.current = requestAnimationFrame(tick);
   };
 
   const start = () => {
     holding.current = true;
     last.current = performance.now();
+    val.current = 0;
+    setProgress(0);
     raf.current = requestAnimationFrame(tick);
   };
   const stop = () => {
@@ -118,6 +122,7 @@ export function ParentHQ({ open, onClose }: { open: boolean; onClose: () => void
   const cap = save.dailyCapMin;
   const capLabel = cap === 0 ? "Open-ended" : `${cap} min a day`;
   const skills = Object.entries(save.skillStats).filter(([, s]) => s.n > 0);
+  const strandGroups = skillsByStrand(save.skillStats);
   const todayXp = save.todayXp;
 
   return (
@@ -142,9 +147,9 @@ export function ParentHQ({ open, onClose }: { open: boolean; onClose: () => void
             type="button"
             onClick={onClose}
             aria-label="Close Parent HQ"
-            className="pill cursor-pointer p-2"
+            className="pill flex h-11 w-11 cursor-pointer items-center justify-center p-0"
           >
-            <X width={18} height={18} />
+            <X width={20} height={20} />
           </button>
         </div>
 
@@ -180,7 +185,7 @@ export function ParentHQ({ open, onClose }: { open: boolean; onClose: () => void
           )}
         </div>
 
-        {/* 2 — SKILLS */}
+        {/* 2 — SKILLS, grouped by CBC strand (v9) */}
         <div className="mb-5 rounded-2xl border-[3px] border-leo-line bg-white p-4">
           <div className="mb-2 font-display text-sm font-black uppercase tracking-wide text-leo-ink-soft">
             Skills so far
@@ -190,34 +195,55 @@ export function ParentHQ({ open, onClose }: { open: boolean; onClose: () => void
               Play a level and each puzzle type will report how it's going.
             </p>
           ) : (
-            <div className="flex flex-col gap-2.5">
-              {skills
-                .sort((a, b) => b[1].ok / b[1].n - a[1].ok / a[1].n)
-                .map(([kind, s]) => {
-                  const pct = Math.round((s.ok / s.n) * 100);
-                  return (
-                    <div key={kind}>
-                      <div className="mb-0.5 flex items-baseline justify-between">
-                        <span className="font-display text-sm font-bold text-leo-ink">
-                          {SKILL_LABELS[kind] ?? kind}
-                        </span>
-                        <span className="text-[11px] font-semibold text-leo-ink-soft">
-                          {pct}% · {s.n} tried
-                        </span>
-                      </div>
-                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-leo-sand">
-                        <div
-                          className={`h-full rounded-full ${pct >= 70 ? "bg-leo-leaf" : pct >= 40 ? "bg-leo-sun" : "bg-leo-berry"}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
+            <div className="flex flex-col gap-4">
+              {strandGroups.map(({ strand, kinds }) =>
+                kinds.length === 0 && !strand.coming ? null : (
+                  <div key={strand.id}>
+                    <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2">
+                      <span className="font-display text-sm font-black text-leo-ink">
+                        {strand.name}
+                      </span>
+                      <span className="text-[10px] font-semibold text-leo-ink-soft">
+                        {strand.coming ? "new puzzles on the way" : strand.substrands}
+                      </span>
                     </div>
-                  );
-                })}
+                    {strand.coming ? (
+                      <div className="rounded-xl border-2 border-dashed border-leo-line px-3 py-2 text-[11px] font-semibold text-leo-ink-soft">
+                        Covered by Think Leo soon — measurement puzzles are being drawn.
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2.5">
+                        {kinds.map(([kind, s]) => {
+                          const pct = Math.round((s.ok / s.n) * 100);
+                          return (
+                            <div key={kind}>
+                              <div className="mb-0.5 flex items-baseline justify-between">
+                                <span className="font-display text-sm font-bold text-leo-ink">
+                                  {SKILL_LABELS[kind] ?? kind}
+                                </span>
+                                <span className="text-[11px] font-semibold text-leo-ink-soft">
+                                  {pct}% · {s.n} tried
+                                </span>
+                              </div>
+                              <div className="h-2.5 w-full overflow-hidden rounded-full bg-leo-sand">
+                                <div
+                                  className={`h-full rounded-full ${pct >= 70 ? "bg-leo-leaf" : pct >= 40 ? "bg-leo-sun" : "bg-leo-berry"}`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              )}
             </div>
           )}
-          <p className="mt-2 text-[11px] text-leo-ink-soft">
-            The difficulty (Flow Ranger) already breathes with these numbers — green
+          <p className="mt-3 text-[11px] text-leo-ink-soft">
+            Groups follow the CBC Mathematical Activities strands (KICD). The
+            difficulty (Flow Ranger) already breathes with these numbers — green
             skills get braver, berry skills get gentler.
           </p>
         </div>
@@ -281,6 +307,9 @@ export function ParentHQ({ open, onClose }: { open: boolean; onClose: () => void
           </div>
         </div>
 
+        {/* 4 — SAVE CODE: move a kid's progress between devices (v9) */}
+        <SaveCodePanel />
+
         {/* danger zone — double-gated */}
         <div className="rounded-2xl border-[3px] border-dashed border-leo-line bg-white/60 p-4">
           {!confirmReset ? (
@@ -329,6 +358,102 @@ function Stat({ big, small }: { big: string; small: string }) {
 }
 
 /* ── Nap screen: the window is used up ────────────────────────── */
+/* ── Save code: export / restore (v9) ────────────────────────── */
+function SaveCodePanel() {
+  const save = useLeo();
+  const [code, setCode] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [paste, setPaste] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null);
+
+  const copy = async () => {
+    const c = save.makeSaveCode();
+    setCode(c);
+    try {
+      await navigator.clipboard.writeText(c);
+    } catch {
+      // clipboard API blocked (older webviews) — the code is on screen to copy by hand
+    }
+    setCopied(true);
+    sfx.click();
+    window.setTimeout(() => setCopied(false), 2200);
+  };
+
+  return (
+    <div className="mb-4 rounded-2xl border-[3px] border-leo-line bg-white p-4">
+      <div className="mb-2 font-display text-sm font-black uppercase tracking-wide text-leo-ink-soft">
+        Save code
+      </div>
+      <p className="mb-3 text-xs font-semibold leading-relaxed text-leo-ink-soft">
+        Moving to a new phone or tablet? Copy this code and paste it into
+        Parent HQ there — stars, streak, hearts and every collected friend
+        travel with it. Nothing leaves this device.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={copy}
+          className="cursor-pointer rounded-2xl border-[3px] border-leo-teal-deep bg-[#dff7f4] px-4 py-3 font-display text-sm font-bold text-leo-teal-deep"
+        >
+          {copied ? "Copied!" : "Copy save code"}
+        </button>
+      </div>
+      {code && (
+        <div className="leo-scroll mt-2 max-h-24 overflow-y-auto rounded-xl bg-leo-sand/70 p-2 font-mono text-[10px] leading-relaxed break-all text-leo-ink-soft">
+          {code}
+        </div>
+      )}
+
+      <div className="mt-4 border-t-2 border-dashed border-leo-line pt-3">
+        <div className="mb-1.5 font-display text-xs font-black uppercase tracking-wide text-leo-ink-soft">
+          Restore on this device
+        </div>
+        <textarea
+          value={paste}
+          onChange={(e) => {
+            setPaste(e.target.value);
+            setResult(null);
+          }}
+          rows={3}
+          placeholder="Paste the code from the old device here…"
+          aria-label="Paste save code"
+          className="leo-scroll w-full resize-none rounded-xl border-[3px] border-leo-line bg-leo-paper p-2 font-mono text-[11px] text-leo-ink outline-none focus:border-leo-teal"
+        />
+        {paste.replace(/\s+/g, "").length > 10 && (
+          <div className="mt-2">
+            <HoldButton
+              label="Hold to restore this save"
+              hint="replaces progress on this device"
+              onDone={() => {
+                const r = save.applySaveCode(paste);
+                setResult(r);
+                if (r.ok) {
+                  setPaste("");
+                  sfx.flame();
+                } else {
+                  sfx.wrong();
+                }
+              }}
+            />
+          </div>
+        )}
+        {result && (
+          <div
+            className={`mt-2 flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${
+              result.ok ? "bg-[#e9ffcf] text-leo-leaf-deep" : "bg-[#ffe4ec] text-leo-berry-deep"
+            }`}
+            role="status"
+          >
+            <Leo mood={result.ok ? "celebrate" : "sad"} size={40} />
+            {result.ok ? "Restored! Every star and friend is back." : result.error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function NapScreen({ onExtend }: { onExtend: () => void }) {
   return (
     <motion.div

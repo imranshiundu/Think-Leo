@@ -48,6 +48,7 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { decodeSaveCode, encodeSaveCode } from "./savecode";
 import { useEffect, useState } from "react";
 import {
   ACH_DEFINITIONS,
@@ -151,6 +152,7 @@ export interface LeoSave {
   skillStats: Record<string, { ok: number; n: number }>; // question kind -> correct/total
   playToday: { day: string; ms: number; bonus: number }; // today's playtime + grown-up extensions
   dailyCapMin: number; // the family play window (minutes; 0 = open ended)
+  tourDone: boolean; // v9 — the first-run welcome tour has been finished (or skipped)
   _hydrated: boolean;
 }
 
@@ -212,6 +214,12 @@ export interface LeoActions {
   levelUpPulse: number; // increments on every new player level (UI trigger)
   toggleSfx: () => void;
   toggleMusic: () => void;
+  /** v9 — first-run tour done (finished or skipped); never shown again. */
+  finishTour: () => void;
+  /** v9 — the save code: export a portable snapshot of this kid's progress. */
+  makeSaveCode: () => string;
+  /** v9 — restore from a save code (Parent HQ, hold-gated). The code wins. */
+  applySaveCode: (code: string) => { ok: boolean; error?: string };
   reset: () => void;
 }
 
@@ -269,6 +277,7 @@ const DEFAULT_SAVE: LeoSave = {
   skillStats: {},
   playToday: { day: "", ms: 0, bonus: 0 },
   dailyCapMin: 30, // the default family window: 30 focused minutes
+  tourDone: false,
   _hydrated: false,
 };
 
@@ -902,6 +911,20 @@ export const useLeo = create<LeoStore>()(
 
       toggleSfx: () => set({ soundSfx: !get().soundSfx }),
       toggleMusic: () => set({ soundMusic: !get().soundMusic }),
+
+      /* ── v9 — first-run tour ─────────────────────────────── */
+      finishTour: () => set({ tourDone: true }),
+
+      /* ── v9 — the save code: export / restore ───────────── */
+      makeSaveCode: () => encodeSaveCode(get()),
+      applySaveCode: (code) => {
+        const r = decodeSaveCode(code);
+        if (!r.ok) return { ok: false, error: r.error };
+        // The code wins: it IS the kid's progress. Runtime-only fields
+        // (_hydrated, pendingAch, levelUpPulse) stay with this device.
+        set({ ...r.payload, _hydrated: true });
+        return { ok: true };
+      },
 
       reset: () => set({ ...DEFAULT_SAVE, _hydrated: true, pendingAch: [], levelUpPulse: 0 }),
     }),
